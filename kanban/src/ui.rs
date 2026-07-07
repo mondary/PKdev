@@ -698,7 +698,7 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
         Span::styled("\u{2588}", Style::default().fg(t.accent)),
     ]));
     lignes.push(Line::from(Span::styled(
-        " [Entrée] envoyer  [←/→] statut  [Ctrl+S] focus agent  [Ctrl+F] conductor  [Échap] retour",
+        " [Entrée] envoyer  [←/→] statut  [o] ouvrir opencode  [v] voir l'agent  [Échap] retour",
         Style::default().fg(t.fg_dim),
     )));
 

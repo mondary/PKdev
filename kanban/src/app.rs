@@ -601,40 +601,59 @@ impl App {
         }
     }
 
-    fn focus_ou_lancer_agent(&mut self) {
+    fn ouvrir_opencode(&mut self) {
         if let Some(id) = self.ticket_detail_id() {
-            if let Some(t) = self.tickets.iter().find(|t| t.id == id) {
-                if t.statut == "doing" {
+            let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
+
+            if let Some(t) = ticket {
+                // Toujours passer en doing + lancer l'agent
+                if t.statut != "doing" {
+                    let statut_actuel = t.statut.clone();
+                    self.changer_statut_detail(&id, &statut_actuel, "doing");
+                }
+
+                // Lancer l'agent si pas déjà fait
+                let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
+                if t.agent_id.is_empty() {
+                    if herdr::start_agent(&agent_name, &self.project_dir) {
+                        let _ = self.db.update_agent_id(&id, &agent_name);
+                        self.sync_agents();
+                    }
+                }
+
+                // Focus sur le workspace
+                let label = std::path::Path::new(&self.project_dir)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "PKdev".into());
+                if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&label, &self.project_dir) {
+                    herdr::focus_workspace(&ws_id);
+                }
+                self.message = format!("opencode ouvert pour {}", id);
+            }
+        }
+    }
+
+    fn voir_agent(&mut self) {
+        if let Some(id) = self.ticket_detail_id() {
+            let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
+
+            if let Some(t) = ticket {
+                if t.statut == "doing" && !t.agent_id.is_empty() {
                     let label = std::path::Path::new(&self.project_dir)
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| "PKdev".into());
-
-                    if t.agent_id.is_empty() {
-                        // Pas d'agent → lancer
-                        let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
-                        if herdr::start_agent(&agent_name, &self.project_dir) {
-                            let _ = self.db.update_agent_id(&id, &agent_name);
-                            self.sync_agents();
-                            self.message = format!("Agent {} lancé dans workspace {}", agent_name, label);
-                        } else {
-                            self.message = "Lancement échoué".into();
-                            return;
-                        }
-                    }
-
-                    // Focus sur le workspace du projet
                     if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&label, &self.project_dir) {
-                        if herdr::focus_workspace(&ws_id) {
-                            self.message = format!("Focus sur workspace {}", label);
-                        } else {
-                            self.message = format!("Workspace {} trouvé mais focus échoué", label);
-                        }
+                        herdr::focus_workspace(&ws_id);
+                        self.message = format!("Agent {} visible", t.agent_id);
                     } else {
-                        self.message = format!("Workspace {} introuvable", label);
+                        self.message = "Workspace introuvable".into();
                     }
+                } else if t.statut == "doing" {
+                    self.message = "Pas encore d'agent — appuie sur 'o' pour ouvrir".into();
                 } else {
-                    self.message = "Passe le ticket en 'doing' pour lancer un agent".into();
+                    self.message = "Passe en 'doing' d'abord".into();
                 }
             }
         }
@@ -804,11 +823,12 @@ impl App {
             KeyCode::Right | KeyCode::Char('L') => self.detail_statut_droite(),
             KeyCode::Tab => self.detail_statut_droite(),
             KeyCode::BackTab => self.detail_statut_gauche(),
+            KeyCode::Char('o') => self.ouvrir_opencode(),
+            KeyCode::Char('v') => self.voir_agent(),
             KeyCode::Char(c) => {
                 if let Some(letter) = ctrl_letter(&key) {
                     match letter {
                         'u' => self.prompt_input.clear(),
-                        's' => self.focus_ou_lancer_agent(),
                         'f' => self.focus_selection(),
                         _ => {}
                     }
