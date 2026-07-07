@@ -34,7 +34,6 @@ pub enum Mode {
     Normal,
     Insert,
     Detail,
-    HerdrPopup,
     ContextMenu,
 }
 
@@ -76,7 +75,7 @@ pub struct App {
     pub tickets: Vec<Ticket>,
     pub all_tickets: Vec<Ticket>,
     pub prompts: Vec<crate::db::Prompt>,
-    pub agents: Vec<herdr::HerdrAgent>,
+    pub agents: Vec<String>,
     pub projects: Vec<Project>,
     pub project_cursor: usize,
     pub project_view_list: bool,
@@ -102,8 +101,6 @@ pub struct App {
     pub browser_entries: Vec<String>,
     pub browser_cursor: usize,
     pub browser_naming: bool,
-    pub herdr_agents: Vec<herdr::HerdrAgent>,
-    pub herdr_cursor: usize,
     db: Database,
 }
 
@@ -143,13 +140,10 @@ impl App {
             browser_entries: Vec::new(),
             browser_cursor: 0,
             browser_naming: false,
-            herdr_agents: Vec::new(),
-            herdr_cursor: 0,
             db,
         };
 
         app.load_projects();
-        app.sync_agents();
         app
     }
 
@@ -202,14 +196,12 @@ impl App {
             self.project_id = p.id.clone();
             self.project_dir = p.chemin.clone();
             self.reload();
-            self.sync_agents();
             self.mode = Mode::Normal;
             self.col_cursor = 0;
             self.ticket_cursor = 0;
             if self.message.is_empty() {
                 self.message = format!("{} — {} tickets", p.id, self.tickets.len());
             }
-            self.lancer_conductor();
         }
     }
 
@@ -399,11 +391,12 @@ impl App {
     }
 
     pub fn sync_agents(&mut self) {
-        self.agents = herdr::list_agents();
+        // No-op : les agents sont maintenant gérés via Kaku CLI
+        // agent_id contient directement le pane-id Kaku
     }
 
-    pub fn agent_pour(&self, ticket_id: &str) -> Option<&herdr::HerdrAgent> {
-        self.agents.iter().find(|a| a.name.as_deref() == Some(ticket_id))
+    pub fn agent_pour(&self, _ticket_id: &str) -> Option<&str> {
+        None
     }
 
     fn clamp_cursor(&mut self) {
@@ -453,20 +446,17 @@ impl App {
                 let nv = COLONNES[self.col_cursor - 1];
                 let _ = self.db.deplacer_ticket(&id, nv);
 
-                // Gestion automatique des agents Herdr
+                // Gestion automatique des agents : lancer opencode au passage en doing
                 if nv == "doing" && t.statut != "doing" {
-                    // Backlog/Review → Doing : lancer un agent
                     let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
-                    if herdr::start_agent(&agent_name, &self.project_dir) {
-                        let _ = self.db.update_agent_id(&id, &agent_name);
-                        self.sync_agents();
-                        self.message = format!("Agent {} lancé pour {}", agent_name, id);
+                    if let Some(pane_id) = herdr::start_agent(&agent_name, &self.project_dir) {
+                        let _ = self.db.update_agent_id(&id, &pane_id);
+                        self.message = format!("opencode lancé pour {}", id);
                     }
                 } else if nv == "done" && t.statut != "done" {
-                    // Review/Doing → Done : arrêter l'agent
                     if !t.agent_id.is_empty() {
                         let _ = herdr::stop_agent(&t.agent_id);
-                        self.message = format!("Agent {} arrêté", t.agent_id);
+                        self.message = format!("Agent arrêté pour {}", id);
                     }
                 }
 
@@ -482,20 +472,17 @@ impl App {
                 let nv = COLONNES[self.col_cursor + 1];
                 let _ = self.db.deplacer_ticket(&id, nv);
 
-                // Gestion automatique des agents Herdr
                 if nv == "doing" && t.statut != "doing" {
-                    // Backlog/Review → Doing : lancer un agent
                     let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
-                    if herdr::start_agent(&agent_name, &self.project_dir) {
-                        let _ = self.db.update_agent_id(&id, &agent_name);
-                        self.sync_agents();
-                        self.message = format!("Agent {} lancé pour {}", agent_name, id);
+                    if let Some(pane_id) = herdr::start_agent(&agent_name, &self.project_dir) {
+                        let _ = self.db.update_agent_id(&id, &pane_id);
+                        self.message = format!("opencode lancé pour {}", id);
                     }
                 } else if nv == "done" && t.statut != "done" {
                     // Review/Doing → Done : arrêter l'agent
                     if !t.agent_id.is_empty() {
                         let _ = herdr::stop_agent(&t.agent_id);
-                        self.message = format!("Agent {} arrêté", t.agent_id);
+                        self.message = format!("Agent arrêté pour {}", id);
                     }
                 }
 
@@ -560,44 +547,31 @@ impl App {
             let _ = self.db.ajouter_prompt(&id, &texte);
             self.prompts = self.db.prompts_pour(&id).unwrap_or_default();
 
-            let prompt_complet = format!("{}: {}", id, texte);
-            herdr::send_prompt(&self.project_id, &prompt_complet);
-            self.message = format!("Prompt envoyé au conductor pour {}", id);
+            // Envoyer au pane opencode du ticket si agent actif
+            let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
+            if let Some(t) = ticket {
+                if !t.agent_id.is_empty() {
+                    let prompt_complet = format!("{}: {}", id, texte);
+                    herdr::send_prompt(&t.agent_id, &prompt_complet);
+                    self.message = format!("Prompt envoyé à {}", id);
+                } else {
+                    self.message = "Pas d'agent actif — appuie sur 'o'".into();
+                }
+            }
         }
         self.prompt_input.clear();
     }
 
     pub fn focus_selection(&mut self) {
-        let conductor = self.project_id.clone();
-        if herdr::herdr_dispo() {
-            herdr::focus_agent(&conductor);
-            self.message = format!("Focus -> conductor {}", conductor);
-        } else {
-            self.message = "Herdr requis pour le focus — lance `herdr` d'abord".into();
-        }
+        self.message = "Utilise 'o' pour ouvrir opencode".into();
     }
     fn lancer_conductor(&mut self) {
-        if !herdr::herdr_dispo() {
-            self.message = format!(
-                "{} — lance opencode dans un terminal, ou démarre Herdr",
-                self.project_id
-            );
-            return;
-        }
-
         let conductor = self.project_id.clone();
         let cwd = self.project_dir.clone();
-
-        if self.agents.iter().any(|a| a.name.as_deref() == Some(&conductor)) {
-            self.message = format!("Conductor {} déjà actif", conductor);
-            return;
-        }
-
-        if herdr::start_agent(&conductor, &cwd) {
-            self.sync_agents();
-            self.message = format!("Conductor {} lancé via Herdr", conductor);
+        if let Some(_pane) = herdr::start_agent(&conductor, &cwd) {
+            self.message = format!("Conductor {} lancé", conductor);
         } else {
-            self.message = "Herdr détecté mais lancement échoué".into();
+            self.message = "Lancement échoué".into();
         }
     }
 
@@ -606,30 +580,31 @@ impl App {
             let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
 
             if let Some(t) = ticket {
-                // Toujours passer en doing + lancer l'agent
+                // Auto-passer en doing
                 if t.statut != "doing" {
                     let statut_actuel = t.statut.clone();
                     self.changer_statut_detail(&id, &statut_actuel, "doing");
                 }
 
-                // Lancer l'agent si pas déjà fait
                 let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
+
+                // Lancer opencode si pas déjà fait
                 if t.agent_id.is_empty() {
-                    if herdr::start_agent(&agent_name, &self.project_dir) {
-                        let _ = self.db.update_agent_id(&id, &agent_name);
-                        self.sync_agents();
+                    if let Some(pane_id) = herdr::start_agent(&agent_name, &self.project_dir) {
+                        let _ = self.db.update_agent_id(&id, &pane_id);
+                        self.reload();
+                        self.message = format!("opencode lancé pour {}", id);
+                    } else {
+                        self.message = "Lancement opencode échoué".into();
+                    }
+                } else {
+                    // Agent existe → focus
+                    if herdr::focus_agent(&t.agent_id) {
+                        self.message = format!("Focus sur {}", id);
+                    } else {
+                        self.message = "Focus échoué".into();
                     }
                 }
-
-                // Focus sur le workspace
-                let label = std::path::Path::new(&self.project_dir)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "PKdev".into());
-                if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&label, &self.project_dir) {
-                    herdr::focus_workspace(&ws_id);
-                }
-                self.message = format!("opencode ouvert pour {}", id);
             }
         }
     }
@@ -640,36 +615,16 @@ impl App {
 
             if let Some(t) = ticket {
                 if t.statut == "doing" && !t.agent_id.is_empty() {
-                    let label = std::path::Path::new(&self.project_dir)
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "PKdev".into());
-                    if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&label, &self.project_dir) {
-                        herdr::focus_workspace(&ws_id);
+                    if herdr::focus_agent(&t.agent_id) {
                         self.message = format!("Agent {} visible", t.agent_id);
                     } else {
-                        self.message = "Workspace introuvable".into();
+                        self.message = "Focus échoué".into();
                     }
                 } else if t.statut == "doing" {
                     self.message = "Pas encore d'agent — appuie sur 'o' pour ouvrir".into();
                 } else {
                     self.message = "Passe en 'doing' d'abord".into();
                 }
-            }
-        }
-    }
-
-    fn focus_herdr_agent(&mut self) {
-        if let Some(agent) = self.herdr_agents.get(self.herdr_cursor) {
-            let target = if let Some(ref name) = agent.name {
-                name.clone()
-            } else {
-                format!("{}", agent.pane_id)
-            };
-            if herdr::focus_agent(&target) {
-                self.message = format!("Focus sur agent: {}", agent.display_name());
-            } else {
-                self.message = "Focus échoué".into();
             }
         }
     }
@@ -694,7 +649,6 @@ impl App {
             Mode::Normal => self.key_normal(key),
             Mode::Insert => self.key_insert(key),
             Mode::Detail => self.key_detail(key),
-            Mode::HerdrPopup => self.key_herdr_popup(key),
             Mode::ContextMenu => self.key_context_menu(key),
         }
     }
@@ -784,7 +738,7 @@ impl App {
             KeyCode::Char('p') => self.retour_projets(),
             KeyCode::Char('?') => self.show_help = !self.show_help,
             KeyCode::Char('t') => self.basculer_theme(),
-            KeyCode::Char('r') => { self.reload(); self.sync_agents(); self.message = "Rechargé".into(); }
+            KeyCode::Char('r') => { self.reload(); self.message = "Rechargé".into(); }
             KeyCode::Left | KeyCode::Char('h') => self.curseur_gauche(),
             KeyCode::Right | KeyCode::Char('l') => self.curseur_droite(),
             KeyCode::Up | KeyCode::Char('k') => self.curseur_haut(),
@@ -875,12 +829,11 @@ impl App {
 
         if nouveau == "doing" && ancien != "doing" {
             let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
-            if herdr::start_agent(&agent_name, &self.project_dir) {
-                let _ = self.db.update_agent_id(id, &agent_name);
-                self.sync_agents();
-                self.message = format!("{} → {} (agent {} lancé)", id, nouveau, agent_name);
+            if let Some(pane_id) = herdr::start_agent(&agent_name, &self.project_dir) {
+                let _ = self.db.update_agent_id(id, &pane_id);
+                self.message = format!("{} → {} (opencode lancé)", id, nouveau);
             } else {
-                self.message = format!("{} → {} (agent échoué)", id, nouveau);
+                self.message = format!("{} → {} (opencode échoué)", id, nouveau);
             }
         } else if nouveau == "done" && ancien != "done" {
             let agent_id = self.tickets.iter()
@@ -889,7 +842,7 @@ impl App {
                 .unwrap_or_default();
             if !agent_id.is_empty() {
                 let _ = herdr::stop_agent(&agent_id);
-                self.message = format!("{} → {} (agent {} arrêté)", id, nouveau, agent_id);
+                self.message = format!("{} → {} (agent arrêté)", id, nouveau);
             } else {
                 self.message = format!("{} → {}", id, nouveau);
             }
@@ -900,18 +853,8 @@ impl App {
         self.reload();
     }
 
-    fn key_herdr_popup(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => { self.mode = Mode::Detail; }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.herdr_cursor > 0 { self.herdr_cursor -= 1; }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if self.herdr_cursor < self.herdr_agents.len().saturating_sub(1) { self.herdr_cursor += 1; }
-            }
-            KeyCode::Enter => self.focus_herdr_agent(),
-            _ => {}
-        }
+    fn key_herdr_popup(&mut self, _key: KeyEvent) {
+        self.mode = Mode::Detail;
     }
 
     fn ticket_sous_souris(&self, mx: u16, my: u16) -> Option<(usize, usize)> {
