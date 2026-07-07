@@ -510,8 +510,6 @@ fn render_colonnes(frame: &mut Frame, app: &mut App, area: Rect, t: Theme) {
                     _ => ("\u{25CF}", t.yellow),
                 };
                 spans.push(Span::styled(format!(" {}", dot), Style::default().fg(color)));
-            } else if !ticket.worktree.is_empty() {
-                spans.push(Span::styled(" \u{25CB}", Style::default().fg(t.yellow)));
             }
 
             let ligne_rect = Rect { x: r.x, y, width: r.width, height: 1 };
@@ -534,11 +532,6 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
     lignes.push(Line::raw(" "));
 
     // Compteurs
-    let actifs = app.tickets.iter().filter(|t| !t.worktree.is_empty()).count();
-    lignes.push(Line::from(vec![
-        Span::styled(" Actifs    ", Style::default().fg(t.fg_dim)),
-        Span::styled(format!("{}", actifs), Style::default().fg(t.green)),
-    ]));
     lignes.push(Line::from(vec![
         Span::styled(" Backlog   ", Style::default().fg(t.fg_dim)),
         Span::styled(format!("{}", app.nb_colonne("backlog")), Style::default().fg(t.fg_dim)),
@@ -654,28 +647,6 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
             Style::default().fg(t.purple),
         ),
     ]));
-    lignes.push(Line::from(vec![
-        Span::styled(" Worktree ", Style::default().fg(t.fg_dim)),
-        Span::styled(
-            if ticket.worktree.is_empty() {
-                "aucun — Ctrl+S pour démarrer".into()
-            } else {
-                ticket.worktree.clone()
-            },
-            Style::default().fg(if ticket.worktree.is_empty() { t.fg_dim } else { t.green }),
-        ),
-    ]));
-
-    if !ticket.worktree.is_empty() {
-        lignes.push(Line::from(vec![
-            Span::styled(" Conductor ", Style::default().fg(t.fg_dim)),
-            Span::styled(
-                format!("{} — Ctrl+F focus", app.project_id),
-                Style::default().fg(t.cyan),
-            ),
-        ]));
-    }
-
     lignes.push(Line::raw(" "));
 
     // Historique des prompts
@@ -732,7 +703,6 @@ fn render_aide(frame: &mut Frame, _app: &App, area: Rect, t: Theme) {
         Line::from(vec![Span::styled("  H / L     ", Style::default().fg(t.yellow)), Span::styled("Déplacer le ticket", Style::default().fg(t.fg))]),
         Line::from(vec![Span::styled("  a         ", Style::default().fg(t.cyan)), Span::styled("Ajouter", Style::default().fg(t.fg))]),
         Line::from(vec![Span::styled("  d         ", Style::default().fg(t.red)), Span::styled("Supprimer", Style::default().fg(t.fg))]),
-        Line::from(vec![Span::styled("  s         ", Style::default().fg(t.green)), Span::styled("Démarrer worktree + opencode", Style::default().fg(t.fg))]),
         Line::from(vec![Span::styled("  t         ", Style::default().fg(t.purple)), Span::styled("Thème", Style::default().fg(t.fg))]),
         Line::from(vec![Span::styled("  clic G    ", Style::default().fg(t.orange)), Span::styled("Sélectionner / drag & drop", Style::default().fg(t.fg))]),
         Line::from(vec![Span::styled("  clic D    ", Style::default().fg(t.orange)), Span::styled("Menu contextuel", Style::default().fg(t.fg))]),

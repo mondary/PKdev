@@ -30,10 +30,10 @@ Le binaire se trouve dans `kanban/target/release/kanban`.
 kanban + intégration herdr).
 
 ```bash
-./devpi
+./start
 ```
 
-`devpi` compile le kanban si besoin, ferme les instances précédentes et lance
+`start` compile le kanban si besoin, ferme les instances précédentes et lance
 Kaku avec la config du projet (`kaku/workspace.lua`), cwd = dossier du projet.
 
 **Option B — kanban seul, dans n'importe quel terminal** :
@@ -52,7 +52,7 @@ pour trouver la DB et résoudre les chemins des projets.
 L'app démarre sur l'écran **Projets**. Chaque projet pointe vers un dossier
 (cwd) ; en l'ouvrant on entre dans le **board** (4 colonnes : backlog / doing /
 review / done). Chaque ticket ouvre une **vue détail** d'où partent les
-worktrees et les agents opencode.
+branches git et les agents opencode.
 
 ### Projets
 
@@ -103,15 +103,9 @@ S'ouvre sur `a`. 100% terminal, aucune dépendance GUI.
 | Touche | Action |
 |--------|--------|
 | saisie + `Entrée` | Envoyer un prompt au conductor |
-| `Ctrl+S` | **Démarrer un worktree git + agent opencode** dans le worktree |
 | `Ctrl+F` | Focus sur l'agent conductor |
 | `Ctrl+U` | Vider la saisie |
 | `Échap` | Retour au board |
-
-`Ctrl+S` crée un worktree `feat/<ticket>` puis lance un agent opencode **dans
-le workspace herdr courant** (`--workspace`/`--tab` hérités des variables
-d'environnement `HERDR_*`), de sorte que le pane s'ouvre dans la fenêtre Kaku
-active, pas ailleurs.
 
 ## Intégration herdr
 
@@ -119,7 +113,7 @@ Le kanban pilote herdr (`HERDR_BIN_PATH` ou `herdr` dans le `PATH`) pour :
 
 - lister les agents (`herdr agent list --json`) — indicateur de statut sur
   chaque carte (● working / blocked / idle),
-- démarrer un agent par ticket dans son worktree (`herdr agent start ...`),
+- démarrer un agent par ticket,
 - focus + envoi de prompt au conductor.
 
 herdr expose `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, `HERDR_PANE_ID` dans chaque
@@ -143,14 +137,15 @@ d'agents.
 PKdev/
 ├── PROJECT.md              Spec complète (architecture, roadmap)
 ├── README.md               Ce fichier
-├── devpi                   Lanceur Kaku (compile + workspace)
+├── README_en.md            English version
+├── start                   Lanceur Kaku (compile + workspace)
 ├── kanban/                 Kanban TUI (Rust + ratatui)
 │   ├── Cargo.toml
 │   └── src/
 │       ├── main.rs         Entrée + event loop + init DB
 │       ├── app.rs          État + logique + événements + navigateur
 │       ├── db.rs           Couche SQLite (CRUD)
-│       ├── herdr.rs        Pont vers herdr (agents, worktrees, focus)
+│       ├── herdr.rs        Pont vers herdr (agents, focus)
 │       ├── ui.rs           Rendu ratatui
 │       └── theme.rs        Palettes Dracula + Catppuccin
 ├── kaku/
@@ -175,8 +170,8 @@ Deux palettes intégrées, switchables avec `t` :
 - Navigateur de dossiers TUI avec création de dossiers
 - Auto-réparation des chemins de projets (déplacement/renommage)
 - Board 4 colonnes, navigation clavier + souris, drag & drop
-- Vue détail, prompts, worktree git par ticket
-- Démarrage d'agent opencode dans le worktree (workspace herdr courant)
+- Vue détail, prompts, branches git par ticket
+- Démarrage d'agent opencode (workspace herdr courant)
 - Persistance SQLite
 - Thèmes Dracula + Catppuccin
 

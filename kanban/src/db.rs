@@ -10,7 +10,6 @@ pub struct Ticket {
     pub statut: String,
     pub priorite: i32,
     pub branche: String,
-    pub worktree: String,
     pub agent_id: String,
 }
 
@@ -115,7 +114,7 @@ impl Database {
 
     pub fn tickets_par_projet(&self, projet_id: &str) -> rusqlite::Result<Vec<Ticket>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, projet_id, titre, description, statut, priorite, branche, worktree, agent_id
+            "SELECT id, projet_id, titre, description, statut, priorite, branche, agent_id
              FROM tickets WHERE projet_id = ?1
              ORDER BY priorite DESC, cree_le ASC",
         )?;
@@ -128,8 +127,7 @@ impl Database {
                 statut: row.get(4)?,
                 priorite: row.get(5)?,
                 branche: row.get(6)?,
-                worktree: row.get(7)?,
-                agent_id: row.get(8)?,
+                agent_id: row.get(7)?,
             })
         })?;
         rows.collect()
@@ -137,7 +135,7 @@ impl Database {
 
     pub fn tous_les_tickets(&self) -> rusqlite::Result<Vec<Ticket>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, projet_id, titre, description, statut, priorite, branche, worktree, agent_id
+            "SELECT id, projet_id, titre, description, statut, priorite, branche, agent_id
              FROM tickets ORDER BY projet_id, priorite DESC, cree_le ASC",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -149,8 +147,7 @@ impl Database {
                 statut: row.get(4)?,
                 priorite: row.get(5)?,
                 branche: row.get(6)?,
-                worktree: row.get(7)?,
-                agent_id: row.get(8)?,
+                agent_id: row.get(7)?,
             })
         })?;
         rows.collect()
@@ -199,18 +196,7 @@ impl Database {
         Ok(format!("{}-{:02}", prefix, count + 1))
     }
 
-    pub fn update_worktree(
-        &self,
-        id: &str,
-        worktree: &str,
-        branche: &str,
-    ) -> rusqlite::Result<()> {
-        self.conn.execute(
-            "UPDATE tickets SET worktree = ?1, branche = ?2 WHERE id = ?3",
-            params![worktree, branche, id],
-        )?;
-        Ok(())
-    }
+
 
     pub fn ajouter_prompt(&self, ticket_id: &str, texte: &str) -> rusqlite::Result<()> {
         self.conn.execute(

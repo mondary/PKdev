@@ -1,23 +1,23 @@
 #!/bin/bash
 # ============================================================
-#  devpi — Lanceur du workspace (layout VSCode dans Kaku)
+#  start — Launcher for workspace (VSCode layout in Kaku)
 # ============================================================
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 KAKU="/Applications/Kaku.app/Contents/MacOS/kaku"
 KANBAN="$DIR/kanban/target/release/kanban"
 
-# Vérifier que le kanban est compilé
+# Build the kanban if not compiled
 if [ ! -f "$KANBAN" ]; then
-  echo "Compilation du Kanban..."
+  echo "Building Kanban..."
   (cd "$DIR/kanban" && cargo build --release) || exit 1
 fi
 
-# Fermer les instances précédentes de ce workspace
+# Close previous instances of this workspace
 pkill -f "workspace.lua" 2>/dev/null
 sleep 1
 
-# Lancer Kaku avec la config du projet
+# Launch Kaku with project config
 exec "$KAKU" \
   --config-file "$DIR/kaku/workspace.lua" \
   start --always-new-process --cwd "$DIR"

@@ -34,7 +34,6 @@ CREATE TABLE tickets (
               CHECK (statut IN ('backlog', 'doing', 'review', 'done')),
   priorite    INTEGER NOT NULL DEFAULT 0,
   branche     TEXT DEFAULT '',
-  worktree    TEXT DEFAULT '',
   agent_id    TEXT DEFAULT '',
   cree_le     TEXT DEFAULT (datetime('now')),
   termine_le  TEXT,
@@ -74,21 +73,21 @@ CREATE TABLE history (
 -- ============================================================
 
 INSERT INTO projects (id, nom, chemin, icone) VALUES
-  ('devpi', 'DEVpi — Gestionnaire d''Agents', '/Users/clm/Documents/GitHub/TESTS/DEVpi', '');
+  ('PKdev', 'PKdev — Agent Manager', '/Users/clm/Documents/GitHub/PROJECTS/PKdev', '');
 
 INSERT INTO tickets (id, projet_id, titre, description, statut, priorite) VALUES
-  ('US-01', 'devpi', 'Config Kaku : layout panes + switcher', 'Mettre en place kaku.lua avec le layout 4 panes et le project switcher fuzzy', 'done',   3),
-  ('US-02', 'devpi', 'Schéma tickets.db SQLite',              'Créer le schéma de coordination conductor/kanban', 'done',   3),
-  ('US-03', 'devpi', 'Kanban TUI read-only',                  'Afficher les tickets depuis la DB en 4 colonnes',  'done',   2),
-  ('US-04', 'devpi', 'Kanban clickable + drag & drop',        'Rendre le Kanban interactif : ajout, déplacement, édition', 'doing',  2),
-  ('US-05', 'devpi', 'Support souris (clic sélection)',       'Cliquer sur un ticket pour le sélectionner', 'doing',  1),
-  ('US-06', 'devpi', 'Git panel : commit + graph + checkout', 'Mini panneau git via lib git2 dans le TUI', 'review', 2),
-  ('US-07', 'devpi', 'Thèmes Dracula + Catppuccin',           'Palettes switchables dans le Kanban', 'review', 1),
-  ('US-08', 'devpi', 'Pont MCP tickets.db <-> conductor',     'Exposer la DB comme serveur MCP pour opencode', 'backlog', 2),
-  ('US-09', 'devpi', 'Prompts conductor : spawn/validate',    'Définir les prompts du conductor opencode', 'backlog', 2),
-  ('US-10', 'devpi', 'Sous-agents + worktrees git',           'Spawn un sub-agent par ticket dans un worktree isolé', 'backlog', 3),
-  ('US-11', 'devpi', 'Auto-merge sur validation',             'Conductor merge automatiquement après review OK', 'backlog', 1),
-  ('US-12', 'devpi', 'Logs live des sous-agents',             'Panneau affichant le statut temps réel des workers', 'backlog', 1);
+  ('US-01', 'PKdev', 'Config Kaku : layout panes + switcher', 'Mettre en place kaku.lua avec le layout 4 panes et le project switcher fuzzy', 'done',   3),
+  ('US-02', 'PKdev', 'Schéma tickets.db SQLite',              'Créer le schéma de coordination conductor/kanban', 'done',   3),
+  ('US-03', 'PKdev', 'Kanban TUI read-only',                  'Afficher les tickets depuis la DB en 4 colonnes',  'done',   2),
+  ('US-04', 'PKdev', 'Kanban clickable + drag & drop',        'Rendre le Kanban interactif : ajout, déplacement, édition', 'doing',  2),
+  ('US-05', 'PKdev', 'Support souris (clic sélection)',       'Cliquer sur un ticket pour le sélectionner', 'doing',  1),
+  ('US-06', 'PKdev', 'Git panel : commit + graph + checkout', 'Mini panneau git via lib git2 dans le TUI', 'review', 2),
+  ('US-07', 'PKdev', 'Thèmes Dracula + Catppuccin',           'Palettes switchables dans le Kanban', 'review', 1),
+  ('US-08', 'PKdev', 'Pont MCP tickets.db <-> conductor',     'Exposer la DB comme serveur MCP pour opencode', 'backlog', 2),
+  ('US-09', 'PKdev', 'Prompts conductor : spawn/validate',    'Définir les prompts du conductor opencode', 'backlog', 2),
+  ('US-10', 'PKdev', 'Branches git par US',                   'Créer une branche feat/us-xx pour chaque US', 'backlog', 3),
+  ('US-11', 'PKdev', 'Auto-merge sur validation',             'Conductor merge automatiquement après review OK', 'backlog', 1),
+  ('US-12', 'PKdev', 'Logs live des sous-agents',             'Panneau affichant le statut temps réel des workers', 'backlog', 1);
 
 INSERT INTO history (event, ticket_id, detail) VALUES
   ('ticket_created', 'US-01', 'Config Kaku initiale'),

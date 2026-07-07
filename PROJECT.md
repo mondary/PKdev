@@ -73,12 +73,12 @@ Au lieu d'une instance opencode par ticket (approche Synara, RAM-explosive),
 un seul **conductor** opencode persistant qui spawn des sous-agents à la
 demande via le système `task` natif d'opencode.
 
-| Approche Synara | Approche conductor |
-|----------------|-------------------|
-| 1 opencode/ticket (~1 Go chacun) | 1 conductor + sous-agents à contexte isolé |
-| 10 tickets = ~10 Go RAM | 10 tickets = ~1,5 Go RAM |
-| Pas de validation centrale | Conductor review avant merge |
-| Conflits de branches | Worktrees git isolés |
+ | Approche Synara | Approche conductor |
+ |----------------|-------------------|
+ | 1 opencode/ticket (~1 Go chacun) | 1 conductor + sous-agents à contexte isolé |
+ | 10 tickets = ~10 Go RAM | 10 tickets = ~1,5 Go RAM |
+ | Pas de validation centrale | Conductor review avant merge |
+ | Conflits de branches | Branches git isolées |
 
 ### UI : ratatui (Rust)
 
@@ -95,7 +95,7 @@ Pour le Kanban et les panneaux customs : **ratatui**.
 ```
 Kaku (WezTerm fork, ~80 Mo, panes natifs)
 ┌──────────────────────────────────────────────────────┐
-│  WORKSPACE "devpi"            [Cmd+Shift+P = switch] │
+│  WORKSPACE "PKdev"            [Cmd+Shift+P = switch] │
 ├───────────────┬──────────────────────────────────────┤
 │               │  CONDUCTOR (opencode persistant)     │
 │  KANBAN TUI   │  - garde le plan + contexte repo     │
@@ -105,7 +105,7 @@ Kaku (WezTerm fork, ~80 Mo, panes natifs)
 │               ├──────────────────────────────────────┤
 │  Backlog ─────┤  SOUS-AGENT LOGS (live)              │
 │  Doing  ─────┤  US-12 [feat/us-12] implémente...    │
-│  Review ─────┤  US-13 [worktree] tests en cours...  │
+│  Review ─────┤  US-13 [feat/us-13] tests en cours...  │
 │  Done   ─────┤  US-14 merged ✓                      │
 ├───────────────┴──────────────────────────────────────┤
 │  GIT PANEL        │  YAZI (fichiers)                 │
@@ -137,15 +137,15 @@ Kaku (WezTerm fork, ~80 Mo, panes natifs)
    → Kanban met statut = "doing" dans tickets.db
    → Conductor lit la DB, spawn un sous-agent pour cette US
 
-3. Sous-agent travaille dans un worktree isolé :
-   git worktree add ../devpi-us-12 -b feat/us-12
+3. Sous-agent travaille sur une branche isolée :
+   git checkout -b feat/us-12
    → implémente
    → lance les tests
    → ouvre une PR draft
    → écrit son statut dans tickets.db
 
 4. Conductor review la PR :
-   ✓ valide → merge → cleanup worktree → US passe à "Done"
+   ✓ valide → merge → cleanup branche → US passe à "Done"
    ✗ refuse → feedback au sous-agent → itération
 
 5. Kanban se rafraîchit en live (watch de tickets.db)
@@ -165,7 +165,6 @@ tickets (
   titre       TEXT,
   statut      TEXT,                 -- backlog|doing|review|done
   branche     TEXT,                 -- "feat/us-12"
-  worktree    TEXT,                 -- "../devpi-us-12"
   agent_id    TEXT,                 -- référence au sous-agent
   projet      TEXT,                 -- workspace/projet
   créé_le     TIMESTAMP,
@@ -250,7 +249,7 @@ Fallback temporaire : `tig` (zéro effort, ~5 Mo, fait exactement ces 3 choses).
 ### Phase 3 — Orchestration agents
 - [ ] Prompts conductor : spawn / validation / merge
 - [ ] Pont MCP : tickets.db ↔ conductor
-- [ ] Sous-agents + worktrees git
+- [ ] Sous-agents + branches git
 - [ ] Auto-merge sur validation
 - [ ] Logs live des sous-agents
 

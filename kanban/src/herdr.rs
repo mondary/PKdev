@@ -91,31 +91,7 @@ pub fn start_agent(name: &str, cwd: &str) -> bool {
     out.map(|o| o.status.success()).unwrap_or(false)
 }
 
-pub fn create_worktree(branch: &str, label: &str) -> Option<String> {
-    let out = Command::new(bin())
-        .args([
-            "worktree", "create",
-            "--branch", branch,
-            "--label", label,
-            "--json",
-        ])
-        .output();
 
-    match out {
-        Ok(o) if o.status.success() => {
-            let text = String::from_utf8_lossy(&o.stdout);
-            serde_json::from_str::<serde_json::Value>(&text)
-                .ok()
-                .and_then(|v| {
-                    v.get("result")
-                        .and_then(|r| r.get("path"))
-                        .and_then(|p| p.as_str())
-                        .map(|s| s.to_string())
-                })
-        }
-        _ => None,
-    }
-}
 
 pub fn herdr_dispo() -> bool {
     Command::new(bin())
