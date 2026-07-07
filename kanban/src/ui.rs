@@ -725,27 +725,79 @@ fn render_herdr_popup(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
     let popup = centrer(area, 80, 40);
     frame.render_widget(Clear, popup);
 
-    let lignes = vec![
+    if app.herdr_agents.is_empty() {
+        let lignes = vec![
+            Line::from(Span::styled(
+                " SESSION HERDR",
+                Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+            )),
+            Line::raw(" "),
+            Line::from(Span::styled(
+                "Aucun agent actif",
+                Style::default().fg(t.fg_dim),
+            )),
+            Line::raw(" "),
+            Line::raw(" "),
+            Line::from(Span::styled(
+                "  [Échap] fermer",
+                Style::default().fg(t.fg_dim),
+            )),
+        ];
+
+        frame.render_widget(
+            Paragraph::new(lignes).style(Style::default().bg(t.surface)),
+            popup,
+        );
+        return;
+    }
+
+    let mut lignes = vec![
         Line::from(Span::styled(
             " SESSION HERDR",
             Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
         )),
         Line::raw(" "),
-        Line::from(Span::styled(
-            "Statut serveur :",
-            Style::default().fg(t.fg_dim),
-        )),
-        Line::from(Span::styled(
-            &app.herdr_info,
-            Style::default().fg(t.green),
-        )),
-        Line::raw(" "),
-        Line::raw(" "),
-        Line::from(Span::styled(
-            "  [Échap] fermer",
-            Style::default().fg(t.fg_dim),
-        )),
     ];
+
+    for (idx, agent) in app.herdr_agents.iter().enumerate() {
+        let sel = idx == app.herdr_cursor;
+        let state_color = match agent.etat_court() {
+            "working" => t.green,
+            "blocked" => t.red,
+            "idle" => t.fg_dim,
+            _ => t.yellow,
+        };
+
+        lignes.push(Line::from(vec![
+            Span::styled(
+                if sel { " > " } else { "   " },
+                Style::default().fg(if sel { t.accent } else { t.fg_dim }),
+            ),
+            Span::styled(
+                format!("● {} ", agent.display_name()),
+                Style::default().fg(state_color),
+            ),
+            Span::styled(
+                format!("[{}]", agent.etat_court()),
+                Style::default().fg(t.fg_dim),
+            ),
+        ]));
+
+        lignes.push(Line::from(vec![
+            Span::styled("     cwd: ", Style::default().fg(t.fg_dim)),
+            Span::styled(&agent.cwd, Style::default().fg(t.fg)),
+        ]));
+
+        lignes.push(Line::raw(" "));
+    }
+
+    lignes.extend(vec![
+        Line::raw(" "),
+        Line::from(Span::styled(
+            "  [Entrée] focus sur l'agent  [↑↓] naviguer  [Échap] fermer",
+            Style::default().fg(t.fg_dim),
+        )),
+    ]);
 
     frame.render_widget(
         Paragraph::new(lignes).style(Style::default().bg(t.surface)),

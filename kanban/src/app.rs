@@ -102,7 +102,8 @@ pub struct App {
     pub browser_entries: Vec<String>,
     pub browser_cursor: usize,
     pub browser_naming: bool,
-    pub herdr_info: String,
+    pub herdr_agents: Vec<herdr::HerdrAgent>,
+    pub herdr_cursor: usize,
     db: Database,
 }
 
@@ -142,7 +143,8 @@ impl App {
             browser_entries: Vec::new(),
             browser_cursor: 0,
             browser_naming: false,
-            herdr_info: String::new(),
+            herdr_agents: Vec::new(),
+            herdr_cursor: 0,
             db,
         };
 
@@ -401,7 +403,7 @@ impl App {
     }
 
     pub fn agent_pour(&self, ticket_id: &str) -> Option<&herdr::HerdrAgent> {
-        self.agents.iter().find(|a| a.name == ticket_id)
+        self.agents.iter().find(|a| a.name.as_deref() == Some(ticket_id))
     }
 
     fn clamp_cursor(&mut self) {
@@ -550,7 +552,7 @@ impl App {
         let conductor = self.project_id.clone();
         let cwd = self.project_dir.clone();
 
-        if self.agents.iter().any(|a| a.name == conductor) {
+        if self.agents.iter().any(|a| a.name.as_deref() == Some(&conductor)) {
             self.message = format!("Conductor {} déjà actif", conductor);
             return;
         }
@@ -564,26 +566,22 @@ impl App {
     }
 
     fn ouvrir_popup_herdr(&mut self) {
-        let output = std::process::Command::new("herdr")
-            .args(["status", "server"])
-            .output();
+        self.herdr_agents = herdr::list_agents();
+        self.herdr_cursor = 0;
+        self.mode = Mode::HerdrPopup;
+    }
 
-        match output {
-            Ok(o) => {
-                let stdout = String::from_utf8_lossy(&o.stdout);
-                let stderr = String::from_utf8_lossy(&o.stderr);
-                self.herdr_info = if !stdout.is_empty() {
-                    stdout.to_string()
-                } else if !stderr.is_empty() {
-                    stderr.to_string()
-                } else {
-                    "Herdr non détecté".to_string()
-                };
-                self.mode = Mode::HerdrPopup;
-            }
-            Err(_) => {
-                self.herdr_info = "Erreur lors de l'exécution de herdr".to_string();
-                self.mode = Mode::HerdrPopup;
+    fn focus_herdr_agent(&mut self) {
+        if let Some(agent) = self.herdr_agents.get(self.herdr_cursor) {
+            let target = if let Some(ref name) = agent.name {
+                name.clone()
+            } else {
+                format!("{}", agent.pane_id)
+            };
+            if herdr::focus_agent(&target) {
+                self.message = format!("Focus sur agent: {}", agent.display_name());
+            } else {
+                self.message = "Focus échoué".into();
             }
         }
     }
@@ -752,6 +750,13 @@ impl App {
     fn key_herdr_popup(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => { self.mode = Mode::Detail; }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.herdr_cursor > 0 { self.herdr_cursor -= 1; }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.herdr_cursor < self.herdr_agents.len().saturating_sub(1) { self.herdr_cursor += 1; }
+            }
+            KeyCode::Enter => self.focus_herdr_agent(),
             _ => {}
         }
     }

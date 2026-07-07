@@ -17,18 +17,27 @@ struct HerdrResult {
 
 #[derive(Deserialize, Clone)]
 pub struct HerdrAgent {
-    pub name: String,
-    pub state: String,
+    pub name: Option<String>,
+    pub agent_status: String,
+    pub cwd: String,
+    pub pane_id: String,
+    pub agent: Option<String>,
 }
 
 impl HerdrAgent {
     pub fn etat_court(&self) -> &str {
-        match self.state.as_str() {
+        match self.agent_status.as_str() {
             "working" => "working",
             "blocked" => "blocked",
             "idle" => "idle",
             _ => "unknown",
         }
+    }
+
+    pub fn display_name(&self) -> String {
+        self.name.clone().unwrap_or_else(|| {
+            self.agent.clone().unwrap_or_else(|| "unknown".into())
+        })
     }
 }
 
@@ -48,12 +57,25 @@ pub fn list_agents() -> Vec<HerdrAgent> {
     }
 }
 
-pub fn focus_agent(name: &str) -> bool {
+pub fn focus_agent(target: &str) -> bool {
     Command::new(bin())
-        .args(["agent", "focus", name])
+        .args(["agent", "focus", target])
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+pub fn get_agent_info(target: &str) -> Option<String> {
+    let output = Command::new(bin())
+        .args(["agent", "explain", target])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            Some(String::from_utf8_lossy(&o.stdout).to_string())
+        }
+        _ => None,
+    }
 }
 
 pub fn send_prompt(name: &str, text: &str) -> bool {
