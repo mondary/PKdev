@@ -119,14 +119,19 @@ fn attach_herdr_fullscreen(
     _terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     _agent: &str,
 ) -> io::Result<()> {
-    // Au lieu d'un handoff plein écran qui bloque, on ouvre herdr
-    // dans un pane Kaku au-dessus du kanban.
-    // Le kanban reste visible en dessous.
+    // Ouvre herdr dans un pane Kaku au-dessus du kanban.
+    // Le kanban reste visible en dessous (30%).
     // Cmd+W sur le pane herdr pour le fermer → retour au kanban.
     let kaku = "/Applications/Kaku.app/Contents/MacOS/kaku";
-    let _ = Command::new(kaku)
-        .args(["cli", "split-pane", "--direction", "up", "--percent", "70", "--", "herdr"])
+    let result = Command::new(kaku)
+        .args(["cli", "split-pane", "--top", "--percent", "70", "--", "herdr"])
         .output();
+
+    if let Ok(o) = &result {
+        if !o.status.success() {
+            eprintln!("split-pane stderr: {}", String::from_utf8_lossy(&o.stderr));
+        }
+    }
 
     Ok(())
 }

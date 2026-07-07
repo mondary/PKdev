@@ -566,6 +566,7 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
     for (k, l) in [
         ("Entrée", "rentrer"),
         ("a", "ajouter"),
+        ("⌥←/→", "déplacer"),
         ("H/L", "déplacer"),
         ("d", "supprimer"),
         ("t", "thème"),

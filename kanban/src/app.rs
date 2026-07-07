@@ -756,6 +756,15 @@ impl App {
     }
 
     fn key_normal(&mut self, key: KeyEvent) {
+        // Option+flèches = déplacer le ticket de colonne
+        if key.modifiers.contains(KeyModifiers::ALT) {
+            match key.code {
+                KeyCode::Left => { self.deplacer_gauche(); return; }
+                KeyCode::Right => { self.deplacer_droite(); return; }
+                _ => {}
+            }
+        }
+
         match key.code {
             KeyCode::Char('q') => self.should_quit = true,
             KeyCode::Esc => {
