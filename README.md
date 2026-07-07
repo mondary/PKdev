@@ -1,8 +1,8 @@
-# DEVpi — Gestionnaire d'Agents
+# PKdev — Gestionnaire d'Agents
 
 Environnement de dev léger, 100% terminal, pour orchestrer des agents IA.
 Construit autour de **Kaku** (WezTerm fork) + un **Kanban TUI** clickable en
-Rust + **opencode** comme conductor.
+Rust + **opencode** comme conductor, le tout coordonné par **herdr**.
 
 ## Démarrage rapide
 
@@ -14,97 +14,152 @@ chmod +x scripts/install-fonts.sh
 ```
 
 Installe : JetBrainsMono Nerd Font, FiraCode Nerd Font, Hack Nerd Font,
-Inter, Poppins. (Futura = font commercial, voir le script pour les alternatives.)
+Inter, Poppins.
 
 ### 2. Compiler le Kanban
 
 ```bash
-cd kanban
-cargo build --release
+cd kanban && cargo build --release
 ```
 
 Le binaire se trouve dans `kanban/target/release/kanban`.
 
-### 3. Lancer le Kanban
+### 3. Lancer
+
+**Option A — dans Kaku (recommandé)** : le workspace complet (terminal +
+kanban + intégration herdr).
 
 ```bash
-./kanban/target/debug/kanban
-# ou en release :
+./devpi
+```
+
+`devpi` compile le kanban si besoin, ferme les instances précédentes et lance
+Kaku avec la config du projet (`kaku/workspace.lua`), cwd = dossier du projet.
+
+**Option B — kanban seul, dans n'importe quel terminal** :
+
+```bash
+cd /Users/clm/Documents/GitHub/PROJECTS/PKdev
 ./kanban/target/release/kanban
 ```
 
-Au premier lancement, `tickets.db` est créée automatiquement avec le schéma
-complet + 12 tickets de démo.
+Au premier lancement, `tickets.db` est créée automatiquement (schéma complet +
+données de démo). Le kanban doit être lancé **depuis le dossier du projet**
+pour trouver la DB et résoudre les chemins des projets.
 
-Vous pouvez aussi spécifier un chemin de DB et un ID de projet :
+## Vue d'ensemble
 
-```bash
-./kanban/target/release/kanban /chemin/vers/tickets.db mon-projet
-```
+L'app démarre sur l'écran **Projets**. Chaque projet pointe vers un dossier
+(cwd) ; en l'ouvrant on entre dans le **board** (4 colonnes : backlog / doing /
+review / done). Chaque ticket ouvre une **vue détail** d'où partent les
+worktrees et les agents opencode.
 
-### 4. (Optionnel) Référence Kaku
-
-Le fichier `kaku/kaku.lua` est une **référence** montrant comment configurer
-un layout multi-panes + project switcher. À adapter selon vos besoins, ou à
-ignorer — le Kanban fonctionne dans n'importe quel terminal.
-
-## Commandes du Kanban
-
-### Navigation
+### Projets
 
 | Touche | Action |
 |--------|--------|
-| `h` `j` `k` `l` ou `←` `↓` `↑` `→` | Naviguer entre colonnes et tickets |
-| `H` | Déplacer le ticket vers la colonne de gauche |
-| `L` | Déplacer le ticket vers la colonne de droite |
-| Clic souris | Sélectionner un ticket |
-| Scroll | Naviguer dans la colonne |
+| `Entrée` / clic | Ouvrir le projet sélectionné |
+| `a` | Ajouter un projet — **navigateur de dossiers TUI** |
+| `d` | Supprimer (confirmation `y/n`) |
+| `Tab` | Basculer vue grille ⇄ vue liste |
+| `← →` / `h l` | Naviguer entre projets |
+| `j/k` | Naviguer (vue liste) |
+| `t` | Changer de thème |
+| `?` | Aide |
 
-### Actions
+#### Navigateur de dossiers (TUI)
+
+S'ouvre sur `a`. 100% terminal, aucune dépendance GUI.
 
 | Touche | Action |
 |--------|--------|
-| `a` | Ajouter un ticket (mode insertion) |
-| `Entrée` | Valider l'ajout |
-| `Échap` | Annuler l'ajout / fermer l'aide |
-| `d` | Supprimer le ticket sélectionné |
-| `t` | Basculer entre Dracula et Catppuccin |
+| `j/k` / `↑ ↓` | Naviguer |
+| `Entrée` / `→` | Ouvrir un dossier, ou valider « ✓ Utiliser ce dossier » |
+| `h` / `←` / `Backspace` | Dossier parent |
+| `n` | **Créer un nouveau dossier** (saisie du nom, `Entrée` = créer) |
+| `Échap` | Annuler |
+
+> **Auto-réparation** : si le chemin d'un projet n'existe plus (dossier
+> renommé/déplacé), le kanban le recale automatiquement sur le cwd courant
+> tant que c'est un dépôt git. Plus besoin de supprimer/recréer.
+
+### Board (tickets)
+
+| Touche | Action |
+|--------|--------|
+| `h j k l` / flèches | Naviguer entre colonnes et tickets |
+| `H` / `L` | Déplacer le ticket de colonne (gauche / droite) |
+| `a` | Ajouter un ticket |
+| `d` | Supprimer le ticket |
+| `Entrée` / clic | Ouvrir la vue détail |
+| clic droit | Menu contextuel (détail / déplacer / supprimer) |
+| glisser-déposer | Déplacer entre colonnes |
+| `p` / `Échap` | Retour aux projets |
 | `r` | Recharger depuis la DB |
-| `?` | Afficher l'aide |
-| `q` | Quitter |
+| `t` / `?` | Thème / Aide |
 
-## Commandes Kaku
+### Vue détail d'un ticket
+
+| Touche | Action |
+|--------|--------|
+| saisie + `Entrée` | Envoyer un prompt au conductor |
+| `Ctrl+S` | **Démarrer un worktree git + agent opencode** dans le worktree |
+| `Ctrl+F` | Focus sur l'agent conductor |
+| `Ctrl+U` | Vider la saisie |
+| `Échap` | Retour au board |
+
+`Ctrl+S` crée un worktree `feat/<ticket>` puis lance un agent opencode **dans
+le workspace herdr courant** (`--workspace`/`--tab` hérités des variables
+d'environnement `HERDR_*`), de sorte que le pane s'ouvre dans la fenêtre Kaku
+active, pas ailleurs.
+
+## Intégration herdr
+
+Le kanban pilote herdr (`HERDR_BIN_PATH` ou `herdr` dans le `PATH`) pour :
+
+- lister les agents (`herdr agent list --json`) — indicateur de statut sur
+  chaque carte (● working / blocked / idle),
+- démarrer un agent par ticket dans son worktree (`herdr agent start ...`),
+- focus + envoi de prompt au conductor.
+
+herdr expose `HERDR_WORKSPACE_ID`, `HERDR_TAB_ID`, `HERDR_PANE_ID` dans chaque
+pane géré : le kanban s'en sert pour cibler le bon workspace à l'ouverture
+d'agents.
+
+## Raccourcis Kaku
 
 | Raccourci | Action |
 |-----------|--------|
-| `Cmd+Shift+P` | Switcher de projet (fuzzy) |
 | `Cmd+Shift+T` | Basculer Dracula / Catppuccin |
 | `Cmd+D` | Split horizontal |
 | `Cmd+Shift+D` | Split vertical |
 | `Cmd+Opt+←↑↓→` | Naviguer entre panes |
+| `Cmd+W` | Fermer le pane |
+| `Cmd+T` | Nouvel onglet |
 
 ## Structure du projet
 
 ```
-DEVpi/
+PKdev/
 ├── PROJECT.md              Spec complète (architecture, roadmap)
 ├── README.md               Ce fichier
+├── devpi                   Lanceur Kaku (compile + workspace)
 ├── kanban/                 Kanban TUI (Rust + ratatui)
 │   ├── Cargo.toml
 │   └── src/
 │       ├── main.rs         Entrée + event loop + init DB
-│       ├── app.rs          État + logique + événements
+│       ├── app.rs          État + logique + événements + navigateur
 │       ├── db.rs           Couche SQLite (CRUD)
-│       ├── ui.rs           Rendu ratatui (colonnes, cartes, aide)
+│       ├── herdr.rs        Pont vers herdr (agents, worktrees, focus)
+│       ├── ui.rs           Rendu ratatui
 │       └── theme.rs        Palettes Dracula + Catppuccin
 ├── kaku/
-│   └── kaku.lua            Config Kaku (fonts, thème, panes, switcher)
-├── conductor/              Prompts du conductor (à venir)
-│   └── prompts/
+│   ├── workspace.lua       Config Kaku (fonts, thème, raccourcis)
+│   └── kaku.lua            Référence layout multi-panes
 ├── scripts/
-│   ├── install-fonts.sh    Installation des Nerd Fonts + Inter + Poppins
+│   ├── install-fonts.sh    Nerd Fonts + Inter + Poppins
 │   └── schema.sql          Schéma SQLite + données de démo
-└── tickets.db              Créée automatiquement au premier lancement
+└── tickets.db              Créée au premier lancement (gitignored)
 ```
 
 ## Thèmes
@@ -114,26 +169,22 @@ Deux palettes intégrées, switchables avec `t` :
 - **Catppuccin Mocha** (par défaut) — doux, pastel
 - **Dracula** — contrasté, néon
 
-Les deux utilisent les couleurs officielles de chaque thème.
+## Ce qui marche
 
-## Ce qui marche maintenant
+- Écran Projets (vue grille + vue liste, `Tab`)
+- Navigateur de dossiers TUI avec création de dossiers
+- Auto-réparation des chemins de projets (déplacement/renommage)
+- Board 4 colonnes, navigation clavier + souris, drag & drop
+- Vue détail, prompts, worktree git par ticket
+- Démarrage d'agent opencode dans le worktree (workspace herdr courant)
+- Persistance SQLite
+- Thèmes Dracula + Catppuccin
 
-- Kanban TUI avec 4 colonnes (Backlog / En cours / Review / Terminé)
-- Navigation clavier complète (hjkl + flèches)
-- Support souris (clic pour sélectionner, scroll)
-- Ajout / suppression / déplacement de tickets
-- Persistance SQLite (tickets.db)
-- Auto-init de la DB au premier lancement
-- Thèmes Dracula + Catppuccin switchables
-- Écran d'aide (?)
-- Config Kaku avec panes + project switcher
-
-## Prochaines étapes (roadmap)
+## Roadmap
 
 Voir `PROJECT.md` pour le détail complet.
 
-- Git panel (commit + graph + checkout)
 - Pont MCP (tickets.db <-> conductor opencode)
-- Sous-agents + worktrees git par ticket
+- Sous-agents conductor (spawn/validate)
 - Auto-merge sur validation
 - Logs live des workers

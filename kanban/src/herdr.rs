@@ -65,15 +65,29 @@ pub fn send_prompt(name: &str, text: &str) -> bool {
 }
 
 pub fn start_agent(name: &str, cwd: &str) -> bool {
-    let out = Command::new(bin())
-        .args([
-            "agent", "start", name,
-            "--cwd", cwd,
-            "--split", "right",
-            "--",
-            "opencode",
-        ])
-        .output();
+    // Cibler le workspace/tab où tourne le kanban (hérité des env vars herdr)
+    // pour que le pane s'ouvre dans la bonne fenêtre Kaku, pas ailleurs.
+    let ws = std::env::var("HERDR_WORKSPACE_ID").ok();
+    let tab = std::env::var("HERDR_TAB_ID").ok();
+
+    let mut args: Vec<String> = vec![
+        "agent".into(), "start".into(), name.into(),
+        "--cwd".into(), cwd.into(),
+        "--split".into(), "down".into(),
+        "--focus".into(),
+    ];
+    if let Some(w) = ws {
+        args.push("--workspace".into());
+        args.push(w);
+    }
+    if let Some(t) = tab {
+        args.push("--tab".into());
+        args.push(t);
+    }
+    args.push("--".into());
+    args.push("opencode".into());
+
+    let out = Command::new(bin()).args(&args).output();
     out.map(|o| o.status.success()).unwrap_or(false)
 }
 

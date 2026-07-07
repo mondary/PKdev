@@ -15,6 +15,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     match app.mode {
         Mode::Projects | Mode::ProjectNew => render_projects(frame, app, area, t),
+        Mode::DirBrowser => {
+            render_projects(frame, app, area, t);
+            render_browser(frame, app, area, t);
+        }
         Mode::ProjectDelete => {
             render_projects(frame, app, area, t);
             render_confirm_delete(frame, app, area, t);
@@ -185,6 +189,69 @@ fn render_projects_list(frame: &mut Frame, app: &mut App, area: Rect, t: Theme, 
     }
 }
 
+fn render_browser(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
+    let popup = centrer(area, 60, 70);
+    frame.render_widget(Clear, popup);
+
+    let mut lignes: Vec<Line> = Vec::new();
+
+    lignes.push(Line::from(vec![
+        Span::styled(" PARCOURIR", Style::default().fg(t.accent).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("  {}", app.browser_cwd), Style::default().fg(t.fg_dim)),
+    ]));
+    lignes.push(Line::raw(" "));
+
+    // Ligne 0 : "Choisir ce dossier"
+    {
+        let sel = app.browser_cursor == 0;
+        lignes.push(Line::from(vec![
+            Span::styled(if sel { " > " } else { "   " }, Style::default().fg(if sel { t.green } else { t.fg_dim })),
+            Span::styled(
+                "✓ Utiliser ce dossier",
+                Style::default().fg(if sel { t.green } else { t.fg_dim })
+                    .add_modifier(if sel { Modifier::BOLD } else { Modifier::empty() }),
+            ),
+        ]));
+    }
+
+    // Dossiers
+    for (i, nom) in app.browser_entries.iter().enumerate() {
+        let sel = app.browser_cursor == i + 1;
+        lignes.push(Line::from(vec![
+            Span::styled(if sel { " > " } else { "   " }, Style::default().fg(if sel { t.accent } else { t.fg_dim })),
+            Span::styled("📁 ", Style::default().fg(t.yellow)),
+            Span::styled(
+                nom,
+                Style::default().fg(if sel { t.fg } else { t.fg_dim }),
+            ),
+        ]));
+    }
+
+    lignes.push(Line::raw(" "));
+
+    if app.browser_naming {
+        lignes.push(Line::from(vec![
+            Span::styled(" Nouveau dossier : ", Style::default().fg(t.green).add_modifier(Modifier::BOLD)),
+            Span::styled(&app.input, Style::default().fg(t.fg)),
+            Span::styled("\u{2588}", Style::default().fg(t.accent)),
+        ]));
+        lignes.push(Line::from(Span::styled(
+            " [Entrée] créer  [Échap] annuler",
+            Style::default().fg(t.fg_dim),
+        )));
+    } else {
+        lignes.push(Line::from(Span::styled(
+            " [Entrée] choisir/ouvrir  [h/←] parent  [n] nouveau dossier  [j/k] naviguer  [Échap] annuler",
+            Style::default().fg(t.fg_dim),
+        )));
+    }
+
+    frame.render_widget(
+        Paragraph::new(lignes).style(Style::default().bg(t.surface)),
+        popup,
+    );
+}
+
 fn render_confirm_delete(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
     let p = match app.projects.get(app.project_cursor) {
         Some(p) => p,
@@ -303,6 +370,8 @@ fn render_sidebar_projects(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
     for (k, l) in [
         ("Entrée", "ouvrir projet"),
         ("a", "ajouter projet"),
+        ("d", "supprimer"),
+        ("Tab", "grille / liste"),
         ("j/k", "naviguer"),
         ("clic", "sélectionner"),
         ("t", "thème"),

@@ -7,11 +7,30 @@ use crate::theme::Theme;
 
 pub const COLONNES: [&str; 4] = ["backlog", "doing", "review", "done"];
 
+/// Détecte un Ctrl+<lettre> de façon robuste : crossterm livre parfois
+/// Ctrl+O comme le caractère de contrôle brut '\u{0f}' plutôt que Char('o')
+/// + modifier CONTROL. On gère les deux.
+fn ctrl_letter(key: &KeyEvent) -> Option<char> {
+    if let KeyCode::Char(c) = key.code {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            return Some(c.to_ascii_lowercase());
+        }
+        if c.is_control() {
+            let b = c as u8;
+            if (1..=26).contains(&b) {
+                return Some((b - 1 + b'a') as char);
+            }
+        }
+    }
+    None
+}
+
 #[derive(PartialEq, Clone, Copy)]
 pub enum Mode {
     Projects,
     ProjectNew,
     ProjectDelete,
+    DirBrowser,
     Normal,
     Insert,
     Detail,
@@ -76,6 +95,12 @@ pub struct App {
     pub drag: Option<DragState>,
     pub show_context_menu: bool,
     pub context_cursor: usize,
+    pub cwd: String,
+    pub want_file_picker: bool,
+    pub browser_cwd: String,
+    pub browser_entries: Vec<String>,
+    pub browser_cursor: usize,
+    pub browser_naming: bool,
     db: Database,
 }
 
@@ -100,7 +125,7 @@ impl App {
             prompt_input: String::new(),
             theme: Theme::catppuccin(),
             project_id: String::new(),
-            project_dir: cwd,
+            project_dir: cwd.clone(),
             should_quit: false,
             message: String::new(),
             show_help: false,
@@ -109,6 +134,12 @@ impl App {
             drag: None,
             show_context_menu: false,
             context_cursor: 0,
+            cwd: cwd.clone(),
+            want_file_picker: false,
+            browser_cwd: cwd.clone(),
+            browser_entries: Vec::new(),
+            browser_cursor: 0,
+            browser_naming: false,
             db,
         };
 
@@ -142,7 +173,27 @@ impl App {
 
     pub fn selectionner_projet(&mut self) {
         let p = self.projects.get(self.project_cursor).cloned();
-        if let Some(p) = p {
+        if let Some(mut p) = p {
+            // Auto-réparation : si le chemin stocké n'existe plus (projet
+            // renommé/déplacé), on recale sur le cwd courant si c'est un dépôt git.
+            if !std::path::Path::new(&p.chemin).exists() {
+                if std::path::Path::new(&self.cwd).join(".git").exists()
+                    || std::path::Path::new(&self.cwd).join(".git").is_file()
+                {
+                    let _ = self.db.update_chemin(&p.id, &self.cwd);
+                    p.chemin = self.cwd.clone();
+                    self.message = format!(
+                        "{} relocalisé -> {}",
+                        p.id, p.chemin
+                    );
+                } else {
+                    self.message = format!(
+                        "{}: chemin introuvable ({}) — lance le kanban depuis le dossier du projet",
+                        p.id, p.chemin
+                    );
+                    return;
+                }
+            }
             self.project_id = p.id.clone();
             self.project_dir = p.chemin.clone();
             self.reload();
@@ -150,7 +201,9 @@ impl App {
             self.mode = Mode::Normal;
             self.col_cursor = 0;
             self.ticket_cursor = 0;
-            self.message = format!("{} — {} tickets", p.id, self.tickets.len());
+            if self.message.is_empty() {
+                self.message = format!("{} — {} tickets", p.id, self.tickets.len());
+            }
             self.lancer_conductor();
         }
     }
@@ -214,6 +267,120 @@ impl App {
     pub fn annuler_suppression(&mut self) {
         self.mode = Mode::Projects;
         self.message.clear();
+    }
+
+    // ----------------------------------------------------------
+    //  Navigateur de dossiers (TUI)
+    // ----------------------------------------------------------
+    pub fn ouvrir_browser(&mut self) {
+        self.mode = Mode::DirBrowser;
+        self.browser_cwd = self.cwd.clone();
+        self.browser_reload();
+    }
+
+    fn browser_reload(&mut self) {
+        self.browser_cursor = 0;
+        self.browser_entries.clear();
+        if let Ok(entries) = std::fs::read_dir(&self.browser_cwd) {
+            let mut dirs: Vec<String> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect();
+            dirs.sort();
+            self.browser_entries = dirs;
+        }
+    }
+
+    fn browser_descend(&mut self) {
+        if self.browser_cursor == 0 {
+            // ligne "Choisir ce dossier" -> confirmation
+            self.browser_confirm();
+            return;
+        }
+        if let Some(nom) = self.browser_entries.get(self.browser_cursor - 1).cloned() {
+            let nv = format!("{}/{}", self.browser_cwd.trim_end_matches('/'), nom);
+            self.browser_cwd = nv;
+            self.browser_reload();
+        }
+    }
+
+    fn browser_parent(&mut self) {
+        if let Some(parent) = std::path::Path::new(&self.browser_cwd).parent() {
+            self.browser_cwd = parent.to_string_lossy().to_string();
+            self.browser_reload();
+        }
+    }
+
+    fn browser_confirm(&mut self) {
+        let chemin = self.browser_cwd.trim_end_matches('/').to_string();
+        self.input = chemin.clone();
+        self.creer_projet_depuis_input();
+    }
+
+    fn browser_creer_dossier(&mut self) {
+        let nom = self.input.trim().to_string();
+        if nom.is_empty() {
+            self.browser_naming = false;
+            return;
+        }
+        let chemin = format!("{}/{}", self.browser_cwd.trim_end_matches('/'), nom);
+        match std::fs::create_dir_all(&chemin) {
+            Ok(()) => {
+                self.browser_naming = false;
+                self.input.clear();
+                self.browser_reload();
+                // sélectionner le nouveau dossier
+                self.browser_cursor = self
+                    .browser_entries
+                    .iter()
+                    .position(|e| e == &nom)
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                self.message = format!("Dossier créé : {}", nom);
+            }
+            Err(e) => {
+                self.message = format!("Création impossible : {}", e);
+            }
+        }
+    }
+
+    fn key_browser(&mut self, key: KeyEvent) {
+        // Sous-mode création de dossier
+        if self.browser_naming {
+            match key.code {
+                KeyCode::Enter => self.browser_creer_dossier(),
+                KeyCode::Esc => { self.browser_naming = false; self.input.clear(); }
+                KeyCode::Backspace => { self.input.pop(); }
+                KeyCode::Char(c) => {
+                    if let Some(letter) = ctrl_letter(&key) {
+                        if letter == 'u' { self.input.clear(); }
+                    } else if !c.is_control() {
+                        self.input.push(c);
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        let taille = 1 + self.browser_entries.len(); // ligne "choisir" + dossiers
+        match key.code {
+            KeyCode::Esc => { self.mode = Mode::Projects; self.message.clear(); }
+            KeyCode::Char('n') => {
+                self.browser_naming = true;
+                self.input.clear();
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.browser_cursor > 0 { self.browser_cursor -= 1; }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.browser_cursor + 1 < taille { self.browser_cursor += 1; }
+            }
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.browser_descend(),
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Backspace => self.browser_parent(),
+            _ => {}
+        }
     }
 
     // ----------------------------------------------------------
@@ -352,27 +519,7 @@ impl App {
             let _ = self.db.ajouter_prompt(&id, &texte);
             self.prompts = self.db.prompts_pour(&id).unwrap_or_default();
 
-            let wt = self
-                .tickets
-                .iter()
-                .find(|t| t.id == id)
-                .map(|t| t.worktree.clone())
-                .unwrap_or_default();
-
-            if wt.is_empty() {
-                self.demarrer_worktree(&id);
-            }
-
-            let prompt_complet = if let Some(wt) = self.tickets.iter().find(|t| t.id == id).map(|t| &t.worktree) {
-                if wt.is_empty() {
-                    texte.clone()
-                } else {
-                    format!("Travaille sur {} dans le worktree {}: {}", id, wt, texte)
-                }
-            } else {
-                texte.clone()
-            };
-
+            let prompt_complet = format!("{}: {}", id, texte);
             herdr::send_prompt(&self.project_id, &prompt_complet);
             self.message = format!("Prompt envoyé au conductor pour {}", id);
         }
@@ -413,37 +560,7 @@ impl App {
         }
     }
 
-    fn demarrer_worktree(&mut self, ticket_id: &str) {
-        let branche = format!("feat/{}", ticket_id.to_lowercase());
-        let wt_name = format!("{}-{}", self.project_id, ticket_id.to_lowercase());
-        let wt_path = format!(
-            "{}/{}",
-            self.project_dir.trim_end_matches('/'),
-            wt_name
-        );
 
-        let result = std::process::Command::new("git")
-            .args(["worktree", "add", &wt_path, "-b", &branche])
-            .current_dir(&self.project_dir)
-            .output();
-
-        match result {
-            Ok(o) if o.status.success() => {
-                let _ = self.db.update_worktree(ticket_id, &wt_path, &branche);
-                let _ = self.db.deplacer_ticket(ticket_id, "doing");
-                self.reload();
-                self.message = format!("{} worktree: {}", ticket_id, wt_path);
-            }
-            Ok(o) => {
-                let err = String::from_utf8_lossy(&o.stderr);
-                let first = err.lines().next().unwrap_or("erreur inconnue");
-                self.message = format!("{}: {}", ticket_id, first);
-            }
-            Err(e) => {
-                self.message = format!("{} git error: {}", ticket_id, e);
-            }
-        }
-    }
 
     pub fn basculer_theme(&mut self) {
         let ancien = self.theme.name;
@@ -459,6 +576,7 @@ impl App {
             Mode::Projects => self.key_projects(key),
             Mode::ProjectNew => self.key_project_new(key),
             Mode::ProjectDelete => self.key_project_delete(key),
+            Mode::DirBrowser => self.key_browser(key),
             Mode::Normal => self.key_normal(key),
             Mode::Insert => self.key_insert(key),
             Mode::Detail => self.key_detail(key),
@@ -500,7 +618,7 @@ impl App {
             KeyCode::Char('?') => self.show_help = !self.show_help,
             KeyCode::Char('t') => self.basculer_theme(),
             KeyCode::Tab => self.basculer_vue_projets(),
-            KeyCode::Char('a') => { self.mode = Mode::ProjectNew; self.input.clear(); }
+            KeyCode::Char('a') => self.ouvrir_browser(),
             KeyCode::Char('d') => self.confirmer_suppression_projet(),
             KeyCode::Left | KeyCode::Char('h') => {
                 if self.project_cursor > 0 { self.project_cursor -= 1; }
@@ -518,13 +636,13 @@ impl App {
             KeyCode::Enter => self.creer_projet_depuis_input(),
             KeyCode::Esc => { self.mode = Mode::Projects; self.input.clear(); }
             KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'u' {
-                    self.input.clear();
-                } else if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'o' {
-                    if let Some(path) = choisir_dossier() {
-                        self.input = path;
+                if let Some(letter) = ctrl_letter(&key) {
+                    match letter {
+                        'u' => self.input.clear(),
+                        'o' => self.want_file_picker = true,
+                        _ => {}
                     }
-                } else if !key.modifiers.contains(KeyModifiers::CONTROL) {
+                } else {
                     self.input.push(c);
                 }
             }
@@ -570,8 +688,11 @@ impl App {
             KeyCode::Enter => self.confirmer_ajout(),
             KeyCode::Esc => { self.mode = Mode::Normal; self.input.clear(); }
             KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'u' { self.input.clear(); }
-                else if !key.modifiers.contains(KeyModifiers::CONTROL) { self.input.push(c); }
+                if let Some(letter) = ctrl_letter(&key) {
+                    if letter == 'u' { self.input.clear(); }
+                } else {
+                    self.input.push(c);
+                }
             }
             KeyCode::Backspace => { self.input.pop(); }
             _ => {}
@@ -584,17 +705,13 @@ impl App {
             KeyCode::Enter => self.envoyer_prompt(),
             KeyCode::Backspace => { self.prompt_input.pop(); }
             KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'u' {
-                    self.prompt_input.clear();
-                } else if key.modifiers.contains(KeyModifiers::CONTROL) && c == 's' {
-                    if let Some(id) = self.ticket_detail_id() {
-                        if let Some(t) = self.tickets.iter().find(|t| t.id == id) {
-                            if t.worktree.is_empty() { self.demarrer_worktree(&id); }
-                        }
+                if let Some(letter) = ctrl_letter(&key) {
+                    match letter {
+                        'u' => self.prompt_input.clear(),
+                        'f' => self.focus_selection(),
+                        _ => {}
                     }
-                } else if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'f' {
-                    self.focus_selection();
-                } else if !key.modifiers.contains(KeyModifiers::CONTROL) {
+                } else {
                     self.prompt_input.push(c);
                 }
             }

@@ -98,6 +98,14 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_chemin(&self, id: &str, chemin: &str) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE projects SET chemin = ?1 WHERE id = ?2",
+            params![chemin, id],
+        )?;
+        Ok(())
+    }
+
     pub fn supprimer_projet(&self, id: &str) -> rusqlite::Result<()> {
         self.conn.execute("DELETE FROM tickets WHERE projet_id = ?1", params![id])?;
         self.conn.execute("DELETE FROM prompts WHERE ticket_id IN (SELECT id FROM tickets WHERE projet_id = ?1)", params![id])?;

@@ -1,0 +1,27 @@
+.agent
+/AGENT.md
+/AGENTS.md
+/CLAUDE.md
+/CODEX.md
+/GEMINI.md
+/GLM.md
+/OPENCODE.md
+.*
+.DS_Store
+node_modules/
+dist/
+build/
+.env
+.venv/
+__pycache__/
+*.log
+
+# Rust build artifacts
+/kanban/target/
+
+# Runtime state
+/tickets.db
+/tickets.db-shm
+/tickets.db-wal
+/kanban/tickets.db
+
