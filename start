@@ -1,23 +1,32 @@
 #!/bin/bash
 # ============================================================
-#  start — Launcher for workspace (VSCode layout in Kaku)
+#  start — Lance le workspace PKdev avec layout split
+#
+#  Layout :
+#  ┌────────────────────────────────┐
+#  │  ZONE AGENTS (60%)             │
+#  │  opencode s'ouvre ici          │
+#  ├────────────────────────────────┤
+#  │  KANBAN (40%)                  │
+#  │  toujours visible              │
+#  └────────────────────────────────┘
 # ============================================================
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 KAKU="/Applications/Kaku.app/Contents/MacOS/kaku"
 KANBAN="$DIR/kanban/target/release/kanban"
 
-# Build the kanban if not compiled
+# Build si besoin
 if [ ! -f "$KANBAN" ]; then
-  echo "Building Kanban..."
+  echo "Build du kanban..."
   (cd "$DIR/kanban" && cargo build --release) || exit 1
 fi
 
-# Close previous instances of this workspace
+# Fermer les anciens workspaces de ce projet
 pkill -f "workspace.lua" 2>/dev/null
 sleep 1
 
-# Launch Kaku with project config
+# Lancer Kaku
 exec "$KAKU" \
   --config-file "$DIR/kaku/workspace.lua" \
   start --always-new-process --cwd "$DIR"

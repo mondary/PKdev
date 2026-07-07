@@ -439,6 +439,24 @@ impl App {
         if self.ticket_cursor < c.saturating_sub(1) { self.ticket_cursor += 1; }
     }
 
+    pub fn project_label(&self) -> String {
+        std::path::Path::new(&self.project_dir)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| self.project_id.clone())
+    }
+
+    fn demarrer_agent_pour_ticket(&mut self, id: &str) {
+        let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
+        let label = self.project_label();
+        if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&label, &self.project_dir) {
+            if let Some(name) = herdr::start_agent(&agent_name, &self.project_dir, &ws_id) {
+                let _ = self.db.update_agent_id(id, &name);
+                self.message = format!("opencode lancé pour {}", id);
+            }
+        }
+    }
+
     pub fn deplacer_gauche(&mut self) {
         if self.col_cursor > 0 {
             if let Some(t) = self.ticket_selectionne() {
@@ -446,13 +464,8 @@ impl App {
                 let nv = COLONNES[self.col_cursor - 1];
                 let _ = self.db.deplacer_ticket(&id, nv);
 
-                // Gestion automatique des agents : lancer opencode au passage en doing
                 if nv == "doing" && t.statut != "doing" {
-                    let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
-                    if let Some(pane_id) = herdr::start_agent(&agent_name, &self.project_dir) {
-                        let _ = self.db.update_agent_id(&id, &pane_id);
-                        self.message = format!("opencode lancé pour {}", id);
-                    }
+                    self.demarrer_agent_pour_ticket(&id);
                 } else if nv == "done" && t.statut != "done" {
                     if !t.agent_id.is_empty() {
                         let _ = herdr::stop_agent(&t.agent_id);
@@ -473,13 +486,8 @@ impl App {
                 let _ = self.db.deplacer_ticket(&id, nv);
 
                 if nv == "doing" && t.statut != "doing" {
-                    let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
-                    if let Some(pane_id) = herdr::start_agent(&agent_name, &self.project_dir) {
-                        let _ = self.db.update_agent_id(&id, &pane_id);
-                        self.message = format!("opencode lancé pour {}", id);
-                    }
+                    self.demarrer_agent_pour_ticket(&id);
                 } else if nv == "done" && t.statut != "done" {
-                    // Review/Doing → Done : arrêter l'agent
                     if !t.agent_id.is_empty() {
                         let _ = herdr::stop_agent(&t.agent_id);
                         self.message = format!("Agent arrêté pour {}", id);
@@ -568,17 +576,19 @@ impl App {
     fn lancer_conductor(&mut self) {
         let conductor = self.project_id.clone();
         let cwd = self.project_dir.clone();
-        if let Some(_pane) = herdr::start_agent(&conductor, &cwd) {
-            self.message = format!("Conductor {} lancé", conductor);
-        } else {
-            self.message = "Lancement échoué".into();
+        let label = self.project_label();
+        if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&label, &cwd) {
+            if let Some(_name) = herdr::start_agent(&conductor, &cwd, &ws_id) {
+                self.message = format!("Conductor {} lancé", conductor);
+            } else {
+                self.message = "Lancement échoué".into();
+            }
         }
     }
 
     fn ouvrir_opencode(&mut self) {
         if let Some(id) = self.ticket_detail_id() {
             let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
-
             if let Some(t) = ticket {
                 // Auto-passer en doing
                 if t.statut != "doing" {
@@ -587,23 +597,25 @@ impl App {
                 }
 
                 let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
+                let project_label = std::path::Path::new(&self.project_dir)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| self.project_id.clone());
 
-                // Lancer opencode si pas déjà fait
-                if t.agent_id.is_empty() {
-                    if let Some(pane_id) = herdr::start_agent(&agent_name, &self.project_dir) {
-                        let _ = self.db.update_agent_id(&id, &pane_id);
+                // Trouver ou créer le workspace du projet
+                if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&project_label, &self.project_dir) {
+                    // Lancer ou réutiliser l'agent
+                    if let Some(name) = herdr::start_agent(&agent_name, &self.project_dir, &ws_id) {
+                        let _ = self.db.update_agent_id(&id, &name);
                         self.reload();
-                        self.message = format!("opencode lancé pour {}", id);
+                        // Focus sur le workspace
+                        herdr::focus_workspace(&ws_id);
+                        self.message = format!("opencode ouvert pour {}", id);
                     } else {
                         self.message = "Lancement opencode échoué".into();
                     }
                 } else {
-                    // Agent existe → focus
-                    if herdr::focus_agent(&t.agent_id) {
-                        self.message = format!("Focus sur {}", id);
-                    } else {
-                        self.message = "Focus échoué".into();
-                    }
+                    self.message = "Création workspace herdr échouée".into();
                 }
             }
         }
@@ -612,18 +624,22 @@ impl App {
     fn voir_agent(&mut self) {
         if let Some(id) = self.ticket_detail_id() {
             let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
-
             if let Some(t) = ticket {
-                if t.statut == "doing" && !t.agent_id.is_empty() {
-                    if herdr::focus_agent(&t.agent_id) {
-                        self.message = format!("Agent {} visible", t.agent_id);
+                let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
+                let project_label = std::path::Path::new(&self.project_dir)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| self.project_id.clone());
+
+                if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&project_label, &self.project_dir) {
+                    if herdr::focus_workspace(&ws_id) {
+                        herdr::focus_agent(&agent_name);
+                        self.message = format!("Agent {} visible", agent_name);
                     } else {
-                        self.message = "Focus échoué".into();
+                        self.message = "Focus workspace échoué".into();
                     }
-                } else if t.statut == "doing" {
-                    self.message = "Pas encore d'agent — appuie sur 'o' pour ouvrir".into();
                 } else {
-                    self.message = "Passe en 'doing' d'abord".into();
+                    self.message = "Workspace introuvable".into();
                 }
             }
         }
@@ -828,13 +844,7 @@ impl App {
         let _ = self.db.deplacer_ticket(id, nouveau);
 
         if nouveau == "doing" && ancien != "doing" {
-            let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
-            if let Some(pane_id) = herdr::start_agent(&agent_name, &self.project_dir) {
-                let _ = self.db.update_agent_id(id, &pane_id);
-                self.message = format!("{} → {} (opencode lancé)", id, nouveau);
-            } else {
-                self.message = format!("{} → {} (opencode échoué)", id, nouveau);
-            }
+            self.demarrer_agent_pour_ticket(id);
         } else if nouveau == "done" && ancien != "done" {
             let agent_id = self.tickets.iter()
                 .find(|t| t.id == id)
