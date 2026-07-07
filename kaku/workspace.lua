@@ -27,11 +27,17 @@ config.keys = {
   { key = "d", mods = "CMD", action = wezterm.action.SplitHorizontal({}) },
   { key = "d", mods = "CMD|SHIFT", action = wezterm.action.SplitVertical({}) },
   { key = "w", mods = "CMD", action = wezterm.action.CloseCurrentPane({ confirm = true }) },
+  -- Pane navigation
   { key = "LeftArrow", mods = "CMD|OPT", action = wezterm.action.ActivatePaneDirection("Left") },
   { key = "RightArrow", mods = "CMD|OPT", action = wezterm.action.ActivatePaneDirection("Right") },
   { key = "UpArrow", mods = "CMD|OPT", action = wezterm.action.ActivatePaneDirection("Up") },
   { key = "DownArrow", mods = "CMD|OPT", action = wezterm.action.ActivatePaneDirection("Down") },
+  -- Tab navigation
   { key = "t", mods = "CMD", action = wezterm.action.SpawnTab("CurrentPaneDomain") },
+  { key = "LeftArrow", mods = "CMD|SHIFT", action = wezterm.action.ActivateTabRelative(-1) },
+  { key = "RightArrow", mods = "CMD|SHIFT", action = wezterm.action.ActivateTabRelative(1) },
+  { key = "[", mods = "CMD|OPT", action = wezterm.action.ActivateTabRelative(-1) },
+  { key = "]", mods = "CMD|OPT", action = wezterm.action.ActivateTabRelative(1) },
 }
 
 return config
