@@ -45,6 +45,9 @@ fn init_db() -> Database {
 }
 
 fn main() -> io::Result<()> {
+    // Désactiver XON/XOFF flow control pour que Ctrl+S et Ctrl+Q atteignent l'app
+    let _ = std::process::Command::new("stty").arg("-ixon").output();
+
     let db = init_db();
     let mut app = App::new(db);
 
