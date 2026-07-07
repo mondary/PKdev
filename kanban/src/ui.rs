@@ -636,10 +636,27 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
     ]));
     lignes.push(Line::raw(" "));
 
-    // Métadonnées
+    // Statut avec navigation visuelle
+    let statuts = ["backlog", "doing", "review", "done"];
+    let idx = statuts.iter().position(|s| *s == ticket.statut).unwrap_or(0);
+    let statut_bar: String = statuts.iter().enumerate()
+        .map(|(i, s)| {
+            if i == idx {
+                format!("[{}]", s)
+            } else {
+                format!(" {} ", s)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("→");
+
     lignes.push(Line::from(vec![
         Span::styled(" Statut   ", Style::default().fg(t.fg_dim)),
-        Span::styled(&ticket.statut, Style::default().fg(couleur)),
+        Span::styled(&statut_bar, Style::default().fg(couleur)),
+    ]));
+    lignes.push(Line::from(vec![
+        Span::styled("          ", Style::default().fg(t.fg_dim)),
+        Span::styled("←/→ ou H/L pour changer", Style::default().fg(t.fg_dim)),
     ]));
     lignes.push(Line::from(vec![
         Span::styled(" Branche  ", Style::default().fg(t.fg_dim)),
@@ -681,7 +698,7 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
         Span::styled("\u{2588}", Style::default().fg(t.accent)),
     ]));
     lignes.push(Line::from(Span::styled(
-        " [Entrée] envoyer  [Ctrl+S] focus sur l'agent  [Ctrl+F] focus conductor  [Échap] retour",
+        " [Entrée] envoyer  [←/→] statut  [Ctrl+S] focus agent  [Ctrl+F] conductor  [Échap] retour",
         Style::default().fg(t.fg_dim),
     )));
 

@@ -795,7 +795,11 @@ impl App {
             KeyCode::Esc => { self.mode = Mode::Normal; self.message.clear(); }
             KeyCode::Enter => self.envoyer_prompt(),
             KeyCode::Backspace => { self.prompt_input.pop(); }
-                KeyCode::Char(c) => {
+            KeyCode::Left | KeyCode::Char('H') => self.detail_statut_gauche(),
+            KeyCode::Right | KeyCode::Char('L') => self.detail_statut_droite(),
+            KeyCode::Tab => self.detail_statut_droite(),
+            KeyCode::BackTab => self.detail_statut_gauche(),
+            KeyCode::Char(c) => {
                 if let Some(letter) = ctrl_letter(&key) {
                     match letter {
                         'u' => self.prompt_input.clear(),
@@ -803,12 +807,72 @@ impl App {
                         'f' => self.focus_selection(),
                         _ => {}
                     }
-                } else {
+                } else if c != 'H' && c != 'L' {
                     self.prompt_input.push(c);
                 }
             }
             _ => {}
         }
+    }
+
+    fn detail_statut_gauche(&mut self) {
+        if let Some(id) = self.ticket_detail_id() {
+            if let Some(t) = self.tickets.iter().find(|t| t.id == id) {
+                let statut_actuel = t.statut.clone();
+                let nv = match statut_actuel.as_str() {
+                    "done" => "review",
+                    "review" => "doing",
+                    "doing" => "backlog",
+                    _ => return,
+                };
+                self.changer_statut_detail(&id, &statut_actuel, nv);
+            }
+        }
+    }
+
+    fn detail_statut_droite(&mut self) {
+        if let Some(id) = self.ticket_detail_id() {
+            if let Some(t) = self.tickets.iter().find(|t| t.id == id) {
+                let statut_actuel = t.statut.clone();
+                let nv = match statut_actuel.as_str() {
+                    "backlog" => "doing",
+                    "doing" => "review",
+                    "review" => "done",
+                    _ => return,
+                };
+                self.changer_statut_detail(&id, &statut_actuel, nv);
+            }
+        }
+    }
+
+    fn changer_statut_detail(&mut self, id: &str, ancien: &str, nouveau: &str) {
+        let _ = self.db.deplacer_ticket(id, nouveau);
+
+        if nouveau == "doing" && ancien != "doing" {
+            let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
+            if herdr::start_agent(&agent_name, &self.project_dir) {
+                let _ = self.db.update_agent_id(id, &agent_name);
+                self.sync_agents();
+                self.message = format!("{} → {} (agent {} lancé)", id, nouveau, agent_name);
+            } else {
+                self.message = format!("{} → {} (agent échoué)", id, nouveau);
+            }
+        } else if nouveau == "done" && ancien != "done" {
+            let agent_id = self.tickets.iter()
+                .find(|t| t.id == id)
+                .map(|t| t.agent_id.clone())
+                .unwrap_or_default();
+            if !agent_id.is_empty() {
+                let _ = herdr::stop_agent(&agent_id);
+                self.message = format!("{} → {} (agent {} arrêté)", id, nouveau, agent_id);
+            } else {
+                self.message = format!("{} → {}", id, nouveau);
+            }
+        } else {
+            self.message = format!("{} → {}", id, nouveau);
+        }
+
+        self.reload();
     }
 
     fn key_herdr_popup(&mut self, key: KeyEvent) {
