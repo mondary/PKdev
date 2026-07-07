@@ -33,22 +33,6 @@ pub struct HerdrWorkspace {
     pub label: String,
 }
 
-#[derive(Deserialize)]
-struct TabListResponse {
-    result: TabListResult,
-}
-
-#[derive(Deserialize)]
-struct TabListResult {
-    tabs: Vec<HerdrTab>,
-}
-
-#[derive(Deserialize, Clone)]
-pub struct HerdrTab {
-    pub tab_id: String,
-    pub label: String,
-}
-
 /// Trouve ou crée un workspace herdr pour le projet.
 pub fn trouver_ou_creer_workspace(label: &str, cwd: &str) -> Option<String> {
     if let Ok(o) = Command::new(bin()).args(["workspace", "list"]).output() {
@@ -89,41 +73,6 @@ pub fn focus_workspace(workspace_id: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn tabs_for_workspace(workspace_id: &str) -> Vec<HerdrTab> {
-    let out = Command::new(bin())
-        .args(["tab", "list", "--workspace", workspace_id])
-        .output();
-
-    match out {
-        Ok(o) if o.status.success() => {
-            let text = String::from_utf8_lossy(&o.stdout);
-            serde_json::from_str::<TabListResponse>(&text)
-                .map(|r| r.result.tabs)
-                .unwrap_or_default()
-        }
-        _ => Vec::new(),
-    }
-}
-
-fn trouver_ou_creer_tab(workspace_id: &str, cwd: &str, label: &str) -> Option<String> {
-    for tab in tabs_for_workspace(workspace_id) {
-        if tab.label == label {
-            return Some(tab.tab_id);
-        }
-    }
-
-    let _ = Command::new(bin())
-        .args(["tab", "create", "--workspace", workspace_id, "--cwd", cwd, "--label", label, "--focus"])
-        .output();
-
-    for tab in tabs_for_workspace(workspace_id) {
-        if tab.label == label {
-            return Some(tab.tab_id);
-        }
-    }
-    None
-}
-
 // =====================================================
 //  AGENTS (= un agent opencode par ticket)
 // =====================================================
@@ -153,6 +102,11 @@ pub struct HerdrAgentsResult {
     pub agents: Vec<HerdrAgent>,
 }
 
+pub struct StartedAgent {
+    pub name: String,
+    pub created: bool,
+}
+
 pub fn list_agents() -> HerdrAgentsResult {
     let out = Command::new(bin()).args(["agent", "list"]).output();
 
@@ -168,16 +122,14 @@ pub fn list_agents() -> HerdrAgentsResult {
     HerdrAgentsResult { agents: Vec::new() }
 }
 
-pub fn start_agent(name: &str, cwd: &str, workspace_id: &str) -> Option<String> {
-    let tab_id = trouver_ou_creer_tab(workspace_id, cwd, name)?;
-
+pub fn start_agent(name: &str, cwd: &str, workspace_id: &str) -> Option<StartedAgent> {
     let agents = list_agents();
     for a in &agents.agents {
         if a.name.as_deref() == Some(name) && a.workspace_id == workspace_id {
             let _ = Command::new(bin())
-                .args(["tab", "focus", &tab_id])
+                .args(["tab", "focus", &a.tab_id])
                 .output();
-            return Some(name.to_string());
+            return Some(StartedAgent { name: name.to_string(), created: false });
         }
     }
 
@@ -186,14 +138,13 @@ pub fn start_agent(name: &str, cwd: &str, workspace_id: &str) -> Option<String> 
             "agent", "start", name,
             "--cwd", cwd,
             "--workspace", workspace_id,
-            "--tab", &tab_id,
             "--focus",
             "--", "opencode",
         ])
         .output();
 
     match result {
-        Ok(o) if o.status.success() => Some(name.to_string()),
+        Ok(o) if o.status.success() => Some(StartedAgent { name: name.to_string(), created: true }),
         Ok(o) => {
             eprintln!("start_agent: {}", String::from_utf8_lossy(&o.stderr));
             None

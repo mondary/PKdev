@@ -456,8 +456,8 @@ impl App {
         let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
         let label = self.project_label();
         if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&label, &self.project_dir) {
-            if let Some(name) = herdr::start_agent(&agent_name, &self.project_dir, &ws_id) {
-                let _ = self.db.update_agent_id(id, &name);
+            if let Some(agent) = herdr::start_agent(&agent_name, &self.project_dir, &ws_id) {
+                let _ = self.db.update_agent_id(id, &agent.name);
                 self.message = format!("opencode lancé pour {}", id);
             }
         }
@@ -584,7 +584,7 @@ impl App {
         let cwd = self.project_dir.clone();
         let label = self.project_label();
         if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&label, &cwd) {
-            if let Some(_name) = herdr::start_agent(&conductor, &cwd, &ws_id) {
+            if let Some(_agent) = herdr::start_agent(&conductor, &cwd, &ws_id) {
                 self.message = format!("Conductor {} lancé", conductor);
             } else {
                 self.message = "Lancement échoué".into();
@@ -596,10 +596,9 @@ impl App {
         if let Some(id) = self.ticket_detail_id() {
             let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
             if let Some(t) = ticket {
-                // Auto-passer en doing
+                // Auto-passer en doing sans démarrer deux fois l'agent.
                 if t.statut != "doing" {
-                    let statut_actuel = t.statut.clone();
-                    self.changer_statut_detail(&id, &statut_actuel, "doing");
+                    let _ = self.db.deplacer_ticket(&id, "doing");
                 }
 
                 let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
@@ -608,17 +607,19 @@ impl App {
                 // Trouver ou créer le workspace du projet
                 if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&project_label, &self.project_dir) {
                     // Lancer ou réutiliser l'agent
-                    if let Some(name) = herdr::start_agent(&agent_name, &self.project_dir, &ws_id) {
-                        let _ = self.db.update_agent_id(&id, &name);
+                    if let Some(agent) = herdr::start_agent(&agent_name, &self.project_dir, &ws_id) {
+                        let _ = self.db.update_agent_id(&id, &agent.name);
                         self.reload();
 
-                        // Envoyer le prompt pré-rempli avec le contexte du ticket
-                        let prompt = format!(
-                            "Travaille sur {}: {} — {}",
-                            t.id, t.titre,
-                            if t.description.is_empty() { "implémente cette US" } else { &t.description }
-                        );
-                        let _ = herdr::send_prompt(&name, &prompt);
+                        if agent.created {
+                            // Prompt initial uniquement pour une nouvelle session.
+                            let prompt = format!(
+                                "Travaille sur {}: {} — {}",
+                                t.id, t.titre,
+                                if t.description.is_empty() { "implémente cette US" } else { &t.description }
+                            );
+                            let _ = herdr::send_prompt(&agent.name, &prompt);
+                        }
 
                         // Focus sur le workspace + onglet
                         let _ = herdr::focus_workspace(&ws_id);

@@ -96,6 +96,11 @@ fn run(
                 if key.kind == event::KeyEventKind::Release {
                     continue;
                 }
+                if key.kind == event::KeyEventKind::Repeat
+                    && matches!(key.code, event::KeyCode::Char('o'))
+                {
+                    continue;
+                }
                 app.handle_key(key);
                 if let Some(agent) = app.take_external_agent() {
                     attach_herdr_fullscreen(terminal, &agent)?;
@@ -119,17 +124,28 @@ fn attach_herdr_fullscreen(
     _terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     _agent: &str,
 ) -> io::Result<()> {
-    // Ouvre herdr dans un pane Kaku au-dessus du kanban.
-    // Le kanban reste visible en dessous (30%).
-    // Cmd+W sur le pane herdr pour le fermer → retour au kanban.
-    let kaku = "/Applications/Kaku.app/Contents/MacOS/kaku";
-    let result = Command::new(kaku)
-        .args(["cli", "split-pane", "--top", "--percent", "70", "--", "herdr"])
+    // Kaku n'expose pas de pane flottant via sa CLI. `cli spawn --new-window`
+    // crée une fenêtre, mais elle peut rester en arrière-plan ; `open -na`
+    // demande explicitement à macOS d'ouvrir/présenter une fenêtre applicative.
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let result = Command::new("open")
+        .args([
+            "-na",
+            "/Applications/Kaku.app",
+            "--args",
+            "start",
+            "--cwd",
+            cwd.to_string_lossy().as_ref(),
+            "--workspace",
+            "PKdev-herdr",
+            "--",
+            "herdr",
+        ])
         .output();
 
     if let Ok(o) = &result {
         if !o.status.success() {
-            eprintln!("split-pane stderr: {}", String::from_utf8_lossy(&o.stderr));
+            eprintln!("open kaku stderr: {}", String::from_utf8_lossy(&o.stderr));
         }
     }
 
