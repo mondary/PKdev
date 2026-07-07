@@ -452,6 +452,24 @@ impl App {
                 let id = t.id.clone();
                 let nv = COLONNES[self.col_cursor - 1];
                 let _ = self.db.deplacer_ticket(&id, nv);
+
+                // Gestion automatique des agents Herdr
+                if nv == "doing" && t.statut != "doing" {
+                    // Backlog/Review → Doing : lancer un agent
+                    let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
+                    if herdr::start_agent(&agent_name, &self.project_dir) {
+                        let _ = self.db.update_agent_id(&id, &agent_name);
+                        self.sync_agents();
+                        self.message = format!("Agent {} lancé pour {}", agent_name, id);
+                    }
+                } else if nv == "done" && t.statut != "done" {
+                    // Review/Doing → Done : arrêter l'agent
+                    if !t.agent_id.is_empty() {
+                        let _ = herdr::stop_agent(&t.agent_id);
+                        self.message = format!("Agent {} arrêté", t.agent_id);
+                    }
+                }
+
                 self.col_cursor -= 1;
                 self.reload();
             }
@@ -463,6 +481,24 @@ impl App {
                 let id = t.id.clone();
                 let nv = COLONNES[self.col_cursor + 1];
                 let _ = self.db.deplacer_ticket(&id, nv);
+
+                // Gestion automatique des agents Herdr
+                if nv == "doing" && t.statut != "doing" {
+                    // Backlog/Review → Doing : lancer un agent
+                    let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
+                    if herdr::start_agent(&agent_name, &self.project_dir) {
+                        let _ = self.db.update_agent_id(&id, &agent_name);
+                        self.sync_agents();
+                        self.message = format!("Agent {} lancé pour {}", agent_name, id);
+                    }
+                } else if nv == "done" && t.statut != "done" {
+                    // Review/Doing → Done : arrêter l'agent
+                    if !t.agent_id.is_empty() {
+                        let _ = herdr::stop_agent(&t.agent_id);
+                        self.message = format!("Agent {} arrêté", t.agent_id);
+                    }
+                }
+
                 self.col_cursor += 1;
                 self.reload();
             }

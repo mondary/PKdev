@@ -113,6 +113,14 @@ pub fn start_agent(name: &str, cwd: &str) -> bool {
     out.map(|o| o.status.success()).unwrap_or(false)
 }
 
+pub fn stop_agent(target: &str) -> bool {
+    Command::new(bin())
+        .args(["pane", "close", target])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 
 
 pub fn herdr_dispo() -> bool {

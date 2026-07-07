@@ -181,6 +181,14 @@ impl Database {
         self.log_history("ticket_moved", Some(id), &format!("-> {}", nouveau_statut))
     }
 
+    pub fn update_agent_id(&self, ticket_id: &str, agent_id: &str) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE tickets SET agent_id = ?1 WHERE id = ?2",
+            params![agent_id, ticket_id],
+        )?;
+        Ok(())
+    }
+
     pub fn supprimer_ticket(&self, id: &str) -> rusqlite::Result<()> {
         self.conn.execute("DELETE FROM tickets WHERE id = ?1", params![id])?;
         self.log_history("ticket_deleted", Some(id), "Ticket supprimé")
