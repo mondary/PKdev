@@ -33,10 +33,24 @@ pub struct HerdrWorkspace {
     pub label: String,
 }
 
+#[derive(Deserialize)]
+struct TabListResponse {
+    result: TabListResult,
+}
+
+#[derive(Deserialize)]
+struct TabListResult {
+    tabs: Vec<HerdrTab>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct HerdrTab {
+    pub tab_id: String,
+    pub label: String,
+}
+
 /// Trouve ou crée un workspace herdr pour le projet.
-/// Retourne le workspace_id.
 pub fn trouver_ou_creer_workspace(label: &str, cwd: &str) -> Option<String> {
-    // Chercher un workspace existant
     if let Ok(o) = Command::new(bin()).args(["workspace", "list"]).output() {
         if o.status.success() {
             let text = String::from_utf8_lossy(&o.stdout);
@@ -50,7 +64,6 @@ pub fn trouver_ou_creer_workspace(label: &str, cwd: &str) -> Option<String> {
         }
     }
 
-    // Créer le workspace
     let out = Command::new(bin())
         .args(["workspace", "create", "--label", label, "--cwd", cwd, "--focus"])
         .output();
@@ -76,6 +89,41 @@ pub fn focus_workspace(workspace_id: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn tabs_for_workspace(workspace_id: &str) -> Vec<HerdrTab> {
+    let out = Command::new(bin())
+        .args(["tab", "list", "--workspace", workspace_id])
+        .output();
+
+    match out {
+        Ok(o) if o.status.success() => {
+            let text = String::from_utf8_lossy(&o.stdout);
+            serde_json::from_str::<TabListResponse>(&text)
+                .map(|r| r.result.tabs)
+                .unwrap_or_default()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn trouver_ou_creer_tab(workspace_id: &str, cwd: &str, label: &str) -> Option<String> {
+    for tab in tabs_for_workspace(workspace_id) {
+        if tab.label == label {
+            return Some(tab.tab_id);
+        }
+    }
+
+    let _ = Command::new(bin())
+        .args(["tab", "create", "--workspace", workspace_id, "--cwd", cwd, "--label", label, "--focus"])
+        .output();
+
+    for tab in tabs_for_workspace(workspace_id) {
+        if tab.label == label {
+            return Some(tab.tab_id);
+        }
+    }
+    None
+}
+
 // =====================================================
 //  AGENTS (= un agent opencode par ticket)
 // =====================================================
@@ -96,6 +144,7 @@ pub struct HerdrAgent {
     pub agent_status: String,
     pub cwd: String,
     pub pane_id: String,
+    pub tab_id: String,
     pub workspace_id: String,
 }
 
@@ -104,7 +153,6 @@ pub struct HerdrAgentsResult {
     pub agents: Vec<HerdrAgent>,
 }
 
-/// Liste tous les agents actifs dans herdr
 pub fn list_agents() -> HerdrAgentsResult {
     let out = Command::new(bin()).args(["agent", "list"]).output();
 
@@ -120,26 +168,25 @@ pub fn list_agents() -> HerdrAgentsResult {
     HerdrAgentsResult { agents: Vec::new() }
 }
 
-/// Démarre opencode pour un ticket dans le workspace du projet.
-/// Si l'agent existe déjà (même nom), ne fait rien (réutilisation = pas de RAM dupliquée).
-/// Retourne le nom de l'agent.
 pub fn start_agent(name: &str, cwd: &str, workspace_id: &str) -> Option<String> {
-    // Vérifier si l'agent existe déjà dans ce workspace
+    let tab_id = trouver_ou_creer_tab(workspace_id, cwd, name)?;
+
     let agents = list_agents();
     for a in &agents.agents {
         if a.name.as_deref() == Some(name) && a.workspace_id == workspace_id {
-            // Agent existe déjà → on le réutilise
+            let _ = Command::new(bin())
+                .args(["tab", "focus", &tab_id])
+                .output();
             return Some(name.to_string());
         }
     }
 
-    // Créer l'agent dans le workspace
     let result = Command::new(bin())
         .args([
             "agent", "start", name,
             "--cwd", cwd,
             "--workspace", workspace_id,
-            "--split", "right",
+            "--tab", &tab_id,
             "--focus",
             "--", "opencode",
         ])
@@ -155,8 +202,17 @@ pub fn start_agent(name: &str, cwd: &str, workspace_id: &str) -> Option<String> 
     }
 }
 
-/// Focus sur un agent par son nom
 pub fn focus_agent(name: &str) -> bool {
+    let agents = list_agents();
+    for a in &agents.agents {
+        if a.name.as_deref() == Some(name) {
+            return Command::new(bin())
+                .args(["tab", "focus", &a.tab_id])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+        }
+    }
     Command::new(bin())
         .args(["agent", "focus", name])
         .output()
@@ -164,7 +220,6 @@ pub fn focus_agent(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Envoie du texte à un agent
 pub fn send_prompt(name: &str, text: &str) -> bool {
     Command::new(bin())
         .args(["agent", "send", name, text])
@@ -173,22 +228,20 @@ pub fn send_prompt(name: &str, text: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Arrête un agent
 pub fn stop_agent(name: &str) -> bool {
-    Command::new(bin())
-        .args(["agent", "focus", name])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    // Fermer le pane de l'agent
-    && Command::new(bin())
-        .args(["pane", "close", name])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    let agents = list_agents();
+    for a in &agents.agents {
+        if a.name.as_deref() == Some(name) {
+            return Command::new(bin())
+                .args(["tab", "close", &a.tab_id])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+        }
+    }
+    false
 }
 
-/// Statut d'un agent (working / idle / blocked / unknown)
 pub fn agent_status(name: &str) -> String {
     let agents = list_agents();
     for a in &agents.agents {

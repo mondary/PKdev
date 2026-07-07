@@ -5,6 +5,7 @@ mod theme;
 mod ui;
 
 use std::io::{self, stdout};
+use std::process::Command;
 
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event};
 use crossterm::execute;
@@ -33,6 +34,11 @@ fn init_db() -> Database {
             std::process::exit(1);
         }
     };
+
+    // Migration légère pour les anciennes bases
+    let _ = db.execute_batch(
+        "ALTER TABLE tickets ADD COLUMN session_started_le TEXT DEFAULT NULL;",
+    );
 
     if !existe {
         if let Err(e) = db.execute_batch(SCHEMA_SQL) {
@@ -91,6 +97,9 @@ fn run(
                     continue;
                 }
                 app.handle_key(key);
+                if let Some(agent) = app.take_external_agent() {
+                    attach_herdr_fullscreen(terminal, &agent)?;
+                }
             }
             Event::Mouse(mouse) => {
                 app.handle_mouse(mouse);
@@ -103,5 +112,21 @@ fn run(
             break;
         }
     }
+    Ok(())
+}
+
+fn attach_herdr_fullscreen(
+    _terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    _agent: &str,
+) -> io::Result<()> {
+    // Au lieu d'un handoff plein écran qui bloque, on ouvre herdr
+    // dans un pane Kaku au-dessus du kanban.
+    // Le kanban reste visible en dessous.
+    // Cmd+W sur le pane herdr pour le fermer → retour au kanban.
+    let kaku = "/Applications/Kaku.app/Contents/MacOS/kaku";
+    let _ = Command::new(kaku)
+        .args(["cli", "split-pane", "--direction", "up", "--percent", "70", "--", "herdr"])
+        .output();
+
     Ok(())
 }

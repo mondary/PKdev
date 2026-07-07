@@ -11,6 +11,7 @@ pub struct Ticket {
     pub priorite: i32,
     pub branche: String,
     pub agent_id: String,
+    pub session_started_le: Option<String>,
     pub cree_le: String,
     pub termine_le: Option<String>,
 }
@@ -116,7 +117,7 @@ impl Database {
 
     pub fn tickets_par_projet(&self, projet_id: &str) -> rusqlite::Result<Vec<Ticket>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, projet_id, titre, description, statut, priorite, branche, agent_id, cree_le, termine_le
+            "SELECT id, projet_id, titre, description, statut, priorite, branche, agent_id, session_started_le, cree_le, termine_le
              FROM tickets WHERE projet_id = ?1
              ORDER BY priorite DESC, cree_le ASC",
         )?;
@@ -130,8 +131,9 @@ impl Database {
                 priorite: row.get(5)?,
                 branche: row.get(6)?,
                 agent_id: row.get(7)?,
-                cree_le: row.get(8)?,
-                termine_le: row.get(9)?,
+                session_started_le: row.get(8)?,
+                cree_le: row.get(9)?,
+                termine_le: row.get(10)?,
             })
         })?;
         rows.collect()
@@ -139,7 +141,7 @@ impl Database {
 
     pub fn tous_les_tickets(&self) -> rusqlite::Result<Vec<Ticket>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, projet_id, titre, description, statut, priorite, branche, agent_id, cree_le, termine_le
+            "SELECT id, projet_id, titre, description, statut, priorite, branche, agent_id, session_started_le, cree_le, termine_le
              FROM tickets ORDER BY projet_id, priorite DESC, cree_le ASC",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -152,8 +154,9 @@ impl Database {
                 priorite: row.get(5)?,
                 branche: row.get(6)?,
                 agent_id: row.get(7)?,
-                cree_le: row.get(8)?,
-                termine_le: row.get(9)?,
+                session_started_le: row.get(8)?,
+                cree_le: row.get(9)?,
+                termine_le: row.get(10)?,
             })
         })?;
         rows.collect()
@@ -189,7 +192,7 @@ impl Database {
 
     pub fn update_agent_id(&self, ticket_id: &str, agent_id: &str) -> rusqlite::Result<()> {
         self.conn.execute(
-            "UPDATE tickets SET agent_id = ?1, cree_le = datetime('now') WHERE id = ?2 AND (cree_le IS NULL OR agent_id = '')",
+            "UPDATE tickets SET agent_id = ?1, session_started_le = datetime('now') WHERE id = ?2",
             params![agent_id, ticket_id],
         )?;
         Ok(())

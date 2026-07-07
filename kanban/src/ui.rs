@@ -1,3 +1,4 @@
+use chrono::{Local, NaiveDateTime, TimeZone};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -6,6 +7,16 @@ use ratatui::Frame;
 
 use crate::app::{App, Mode, COLONNES};
 use crate::theme::Theme;
+
+fn session_age_label(ticket: &crate::db::Ticket) -> Option<String> {
+    let started = ticket.session_started_le.as_ref()?;
+    let dt = NaiveDateTime::parse_from_str(started, "%Y-%m-%d %H:%M:%S").ok()?;
+    let started = Local.from_local_datetime(&dt).single()?;
+    let secs = (Local::now() - started).num_seconds().max(0);
+    let mins = secs / 60;
+    let secs = secs % 60;
+    Some(format!("{:02}m{:02}s", mins, secs))
+}
 
 pub fn render(frame: &mut Frame, app: &mut App) {
     app.reset_hitzones();
@@ -143,12 +154,18 @@ fn render_projects_columns(frame: &mut Frame, app: &mut App, area: Rect, t: Them
             if y >= r.y + r.height { break; }
             let couleur = t.status_color(&ticket.statut);
             let dot = if !ticket.agent_id.is_empty() { "\u{25CF} " } else { "  " };
+            let age = if ticket.agent_id.is_empty() {
+                String::new()
+            } else {
+                session_age_label(ticket).map(|s| format!("[{}] ", s)).unwrap_or_default()
+            };
 
             frame.render_widget(
                 Paragraph::new(Line::from(vec![
                     Span::styled(dot, Style::default().fg(t.green)),
+                    Span::styled(age, Style::default().fg(t.fg_dim)),
                     Span::styled(format!("{} ", ticket.id), Style::default().fg(couleur).add_modifier(Modifier::BOLD)),
-                    Span::styled(truncate(&ticket.titre, r.width.saturating_sub(14) as usize), Style::default().fg(t.fg_dim)),
+                    Span::styled(truncate(&ticket.titre, r.width.saturating_sub(24) as usize), Style::default().fg(t.fg_dim)),
                 ])).style(Style::default().bg(t.bg)),
                 Rect { x: r.x, y, width: r.width, height: 1 },
             );
@@ -687,7 +704,7 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
         Span::styled("\u{2588}", Style::default().fg(t.accent)),
     ]));
     lignes.push(Line::from(Span::styled(
-        " [Entrée] envoyer  [←/→] statut  [o] ouvrir opencode  [v] voir l'agent  [Échap] retour",
+        " [Entrée] envoyer  [←/→] statut  [o] onglet Herdr  [v] basculer agent  [Échap] retour",
         Style::default().fg(t.fg_dim),
     )));
 

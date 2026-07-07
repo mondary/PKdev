@@ -101,6 +101,7 @@ pub struct App {
     pub browser_entries: Vec<String>,
     pub browser_cursor: usize,
     pub browser_naming: bool,
+    pub external_agent: Option<String>,
     db: Database,
 }
 
@@ -140,6 +141,7 @@ impl App {
             browser_entries: Vec::new(),
             browser_cursor: 0,
             browser_naming: false,
+            external_agent: None,
             db,
         };
 
@@ -446,6 +448,10 @@ impl App {
             .unwrap_or_else(|| self.project_id.clone())
     }
 
+    pub fn take_external_agent(&mut self) -> Option<String> {
+        self.external_agent.take()
+    }
+
     fn demarrer_agent_pour_ticket(&mut self, id: &str) {
         let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
         let label = self.project_label();
@@ -597,10 +603,7 @@ impl App {
                 }
 
                 let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
-                let project_label = std::path::Path::new(&self.project_dir)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| self.project_id.clone());
+                let project_label = self.project_label();
 
                 // Trouver ou créer le workspace du projet
                 if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&project_label, &self.project_dir) {
@@ -608,11 +611,24 @@ impl App {
                     if let Some(name) = herdr::start_agent(&agent_name, &self.project_dir, &ws_id) {
                         let _ = self.db.update_agent_id(&id, &name);
                         self.reload();
-                        // Focus sur le workspace
-                        herdr::focus_workspace(&ws_id);
-                        self.message = format!("opencode ouvert pour {}", id);
+
+                        // Envoyer le prompt pré-rempli avec le contexte du ticket
+                        let prompt = format!(
+                            "Travaille sur {}: {} — {}",
+                            t.id, t.titre,
+                            if t.description.is_empty() { "implémente cette US" } else { &t.description }
+                        );
+                        let _ = herdr::send_prompt(&name, &prompt);
+
+                        // Focus sur le workspace + onglet
+                        let _ = herdr::focus_workspace(&ws_id);
+                        let _ = herdr::focus_agent(&agent_name);
+
+                        // Bascule vers herdr plein écran
+                        self.external_agent = Some("__herdr__".into());
+                        self.message = format!("{} → bascule vers Herdr", id);
                     } else {
-                        self.message = "Lancement opencode échoué".into();
+                        self.message = "Lancement agent échoué".into();
                     }
                 } else {
                     self.message = "Création workspace herdr échouée".into();
@@ -624,20 +640,15 @@ impl App {
     fn voir_agent(&mut self) {
         if let Some(id) = self.ticket_detail_id() {
             let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
-            if let Some(t) = ticket {
+            if ticket.is_some() {
                 let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
-                let project_label = std::path::Path::new(&self.project_dir)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| self.project_id.clone());
+                let project_label = self.project_label();
 
                 if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&project_label, &self.project_dir) {
-                    if herdr::focus_workspace(&ws_id) {
-                        herdr::focus_agent(&agent_name);
-                        self.message = format!("Agent {} visible", agent_name);
-                    } else {
-                        self.message = "Focus workspace échoué".into();
-                    }
+                    let _ = herdr::focus_workspace(&ws_id);
+                    let _ = herdr::focus_agent(&agent_name);
+                    self.external_agent = Some("__herdr__".into());
+                    self.message = format!("Bascule vers Herdr — {}", agent_name);
                 } else {
                     self.message = "Workspace introuvable".into();
                 }
