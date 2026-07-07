@@ -605,28 +605,33 @@ impl App {
         if let Some(id) = self.ticket_detail_id() {
             if let Some(t) = self.tickets.iter().find(|t| t.id == id) {
                 if t.statut == "doing" {
-                    if !t.agent_id.is_empty() {
-                        // Agent existe → focus direct
-                        if herdr::focus_agent(&t.agent_id) {
-                            self.message = format!("Focus sur {}", t.agent_id);
-                        } else {
-                            self.message = "Focus échoué".into();
-                        }
-                    } else {
-                        // Pas d'agent → lancer + focus
+                    let label = std::path::Path::new(&self.project_dir)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "PKdev".into());
+
+                    if t.agent_id.is_empty() {
+                        // Pas d'agent → lancer
                         let agent_name = format!("{}-{}", self.project_id, id.to_lowercase());
                         if herdr::start_agent(&agent_name, &self.project_dir) {
                             let _ = self.db.update_agent_id(&id, &agent_name);
                             self.sync_agents();
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                            if herdr::focus_agent(&agent_name) {
-                                self.message = format!("Agent {} lancé + focus", agent_name);
-                            } else {
-                                self.message = format!("Agent {} lancé", agent_name);
-                            }
+                            self.message = format!("Agent {} lancé dans workspace {}", agent_name, label);
                         } else {
                             self.message = "Lancement échoué".into();
+                            return;
                         }
+                    }
+
+                    // Focus sur le workspace du projet
+                    if let Some(ws_id) = herdr::trouver_ou_creer_workspace(&label, &self.project_dir) {
+                        if herdr::focus_workspace(&ws_id) {
+                            self.message = format!("Focus sur workspace {}", label);
+                        } else {
+                            self.message = format!("Workspace {} trouvé mais focus échoué", label);
+                        }
+                    } else {
+                        self.message = format!("Workspace {} introuvable", label);
                     }
                 } else {
                     self.message = "Passe le ticket en 'doing' pour lancer un agent".into();
