@@ -43,7 +43,7 @@ impl HerdrAgent {
 
 pub fn list_agents() -> Vec<HerdrAgent> {
     let out = Command::new(bin())
-        .args(["agent", "list", "--json"])
+        .args(["agent", "list"])
         .output();
 
     match out {
