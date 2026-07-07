@@ -681,7 +681,7 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
         Span::styled("\u{2588}", Style::default().fg(t.accent)),
     ]));
     lignes.push(Line::from(Span::styled(
-        " [Entrée] envoyer  [Ctrl+S] session herdr  [Ctrl+F] focus  [Échap] retour",
+        " [Entrée] envoyer  [Ctrl+S] focus sur l'agent  [Ctrl+F] focus conductor  [Échap] retour",
         Style::default().fg(t.fg_dim),
     )));
 
