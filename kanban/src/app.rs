@@ -596,6 +596,8 @@ impl App {
         if let Some(id) = self.ticket_detail_id() {
             let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
             if let Some(t) = ticket {
+                let should_send_initial_prompt = t.agent_id.is_empty();
+
                 // Auto-passer en doing sans démarrer deux fois l'agent.
                 if t.statut != "doing" {
                     let _ = self.db.deplacer_ticket(&id, "doing");
@@ -611,7 +613,7 @@ impl App {
                         let _ = self.db.update_agent_id(&id, &agent.name);
                         self.reload();
 
-                        if agent.created {
+                        if agent.created && should_send_initial_prompt {
                             // Prompt initial uniquement pour une nouvelle session.
                             let prompt = format!(
                                 "Travaille sur {}: {} — {}",
