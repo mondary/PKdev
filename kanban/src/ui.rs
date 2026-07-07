@@ -28,6 +28,11 @@ pub fn render(frame: &mut Frame, app: &mut App) {
             render_board(frame, app, area, t);
             render_detail(frame, app, area, t);
         }
+        Mode::HerdrPopup => {
+            render_board(frame, app, area, t);
+            render_detail(frame, app, area, t);
+            render_herdr_popup(frame, app, area, t);
+        }
         Mode::ContextMenu => {
             render_board(frame, app, area, t);
         }
@@ -676,7 +681,7 @@ fn render_detail(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
         Span::styled("\u{2588}", Style::default().fg(t.accent)),
     ]));
     lignes.push(Line::from(Span::styled(
-        " [Entrée] envoyer  [Ctrl+S] worktree  [Ctrl+F] focus  [Échap] retour",
+        " [Entrée] envoyer  [Ctrl+S] session herdr  [Ctrl+F] focus  [Échap] retour",
         Style::default().fg(t.fg_dim),
     )));
 
@@ -708,6 +713,38 @@ fn render_aide(frame: &mut Frame, _app: &App, area: Rect, t: Theme) {
         Line::from(vec![Span::styled("  clic D    ", Style::default().fg(t.orange)), Span::styled("Menu contextuel", Style::default().fg(t.fg))]),
         Line::raw(" "),
         Line::from(Span::styled("  ? / Échap pour fermer", Style::default().fg(t.fg_dim))),
+    ];
+
+    frame.render_widget(
+        Paragraph::new(lignes).style(Style::default().bg(t.surface)),
+        popup,
+    );
+}
+
+fn render_herdr_popup(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
+    let popup = centrer(area, 80, 40);
+    frame.render_widget(Clear, popup);
+
+    let lignes = vec![
+        Line::from(Span::styled(
+            " SESSION HERDR",
+            Style::default().fg(t.accent).add_modifier(Modifier::BOLD),
+        )),
+        Line::raw(" "),
+        Line::from(Span::styled(
+            "Statut serveur :",
+            Style::default().fg(t.fg_dim),
+        )),
+        Line::from(Span::styled(
+            &app.herdr_info,
+            Style::default().fg(t.green),
+        )),
+        Line::raw(" "),
+        Line::raw(" "),
+        Line::from(Span::styled(
+            "  [Échap] fermer",
+            Style::default().fg(t.fg_dim),
+        )),
     ];
 
     frame.render_widget(

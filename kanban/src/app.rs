@@ -34,6 +34,7 @@ pub enum Mode {
     Normal,
     Insert,
     Detail,
+    HerdrPopup,
     ContextMenu,
 }
 
@@ -101,6 +102,7 @@ pub struct App {
     pub browser_entries: Vec<String>,
     pub browser_cursor: usize,
     pub browser_naming: bool,
+    pub herdr_info: String,
     db: Database,
 }
 
@@ -140,6 +142,7 @@ impl App {
             browser_entries: Vec::new(),
             browser_cursor: 0,
             browser_naming: false,
+            herdr_info: String::new(),
             db,
         };
 
@@ -560,6 +563,31 @@ impl App {
         }
     }
 
+    fn ouvrir_popup_herdr(&mut self) {
+        let output = std::process::Command::new("herdr")
+            .args(["status", "server"])
+            .output();
+
+        match output {
+            Ok(o) => {
+                let stdout = String::from_utf8_lossy(&o.stdout);
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                self.herdr_info = if !stdout.is_empty() {
+                    stdout.to_string()
+                } else if !stderr.is_empty() {
+                    stderr.to_string()
+                } else {
+                    "Herdr non détecté".to_string()
+                };
+                self.mode = Mode::HerdrPopup;
+            }
+            Err(_) => {
+                self.herdr_info = "Erreur lors de l'exécution de herdr".to_string();
+                self.mode = Mode::HerdrPopup;
+            }
+        }
+    }
+
 
 
     pub fn basculer_theme(&mut self) {
@@ -580,6 +608,7 @@ impl App {
             Mode::Normal => self.key_normal(key),
             Mode::Insert => self.key_insert(key),
             Mode::Detail => self.key_detail(key),
+            Mode::HerdrPopup => self.key_herdr_popup(key),
             Mode::ContextMenu => self.key_context_menu(key),
         }
     }
@@ -708,6 +737,7 @@ impl App {
                 if let Some(letter) = ctrl_letter(&key) {
                     match letter {
                         'u' => self.prompt_input.clear(),
+                        's' => self.ouvrir_popup_herdr(),
                         'f' => self.focus_selection(),
                         _ => {}
                     }
@@ -715,6 +745,13 @@ impl App {
                     self.prompt_input.push(c);
                 }
             }
+            _ => {}
+        }
+    }
+
+    fn key_herdr_popup(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => { self.mode = Mode::Detail; }
             _ => {}
         }
     }

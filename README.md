@@ -174,6 +174,7 @@ Deux palettes intégrées, switchables avec `t` :
 - Démarrage d'agent opencode (workspace herdr courant)
 - Persistance SQLite
 - Thèmes Dracula + Catppuccin
+- Support herdr imbriqué (pour voir les agents travailler)
 
 ## Roadmap
 
