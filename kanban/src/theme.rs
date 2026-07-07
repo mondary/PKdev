@@ -1,10 +1,5 @@
 use ratatui::style::Color;
 
-pub enum ThemeName {
-    Dracula,
-    Catppuccin,
-}
-
 #[derive(Clone, Copy)]
 pub struct Theme {
     pub name: &'static str,
@@ -81,11 +76,122 @@ impl Theme {
         }
     }
 
-    pub fn next(&self) -> Self {
-        match self.name {
-            "Dracula" => Theme::catppuccin(),
-            _ => Theme::dracula(),
+    pub fn sakura() -> Self {
+        Theme {
+            name: "Sakura",
+            bg: hex(0xfbf3f0),
+            bg_alt: hex(0xf3e8e3),
+            surface: hex(0xead9d2),
+            surface_hi: hex(0xdec4ba),
+            fg: hex(0x4a3536),
+            fg_dim: hex(0x9c8480),
+            accent: hex(0xc56a8a),
+            accent_dim: hex(0xa85878),
+            green: hex(0x5e9472),
+            yellow: hex(0xc2923f),
+            red: hex(0xc0504d),
+            blue: hex(0x4d7fa8),
+            purple: hex(0x8a5fab),
+            cyan: hex(0x4a8f99),
+            orange: hex(0xc8763f),
+            pink: hex(0xc56a8a),
+            border: hex(0xddc8c0),
+            border_hi: hex(0xc56a8a),
         }
+    }
+
+    pub fn nord_light() -> Self {
+        Theme {
+            name: "Nord Light",
+            bg: hex(0xf4f6fa),
+            bg_alt: hex(0xe8ecf3),
+            surface: hex(0xdce3ed),
+            surface_hi: hex(0xcbd5e3),
+            fg: hex(0x3b4252),
+            fg_dim: hex(0x7b8494),
+            accent: hex(0x5e81ac),
+            accent_dim: hex(0x4c6c92),
+            green: hex(0x5f8c6a),
+            yellow: hex(0xc99a3a),
+            red: hex(0xbf616a),
+            blue: hex(0x5e81ac),
+            purple: hex(0x8c6899),
+            cyan: hex(0x4d8a9e),
+            orange: hex(0xc8744a),
+            pink: hex(0xb56a8a),
+            border: hex(0xcbd5e3),
+            border_hi: hex(0x5e81ac),
+        }
+    }
+
+    pub fn solarized_light() -> Self {
+        Theme {
+            name: "Solarized Light",
+            bg: hex(0xfdf6e3),
+            bg_alt: hex(0xeee8d5),
+            surface: hex(0xe3dcc2),
+            surface_hi: hex(0xd6cdab),
+            fg: hex(0x586e75),
+            fg_dim: hex(0x93a1a1),
+            accent: hex(0x268bd2),
+            accent_dim: hex(0x1e6fa7),
+            green: hex(0x719e3f),
+            yellow: hex(0xb58900),
+            red: hex(0xdc322f),
+            blue: hex(0x268bd2),
+            purple: hex(0x6c71c4),
+            cyan: hex(0x2aa198),
+            orange: hex(0xcb4b16),
+            pink: hex(0xd33682),
+            border: hex(0xd6cdab),
+            border_hi: hex(0x268bd2),
+        }
+    }
+
+    pub fn gruvbox_light() -> Self {
+        Theme {
+            name: "Gruvbox Light",
+            bg: hex(0xfbf1c7),
+            bg_alt: hex(0xf2e5bc),
+            surface: hex(0xe6d6a4),
+            surface_hi: hex(0xd9c78c),
+            fg: hex(0x3c3836),
+            fg_dim: hex(0x928374),
+            accent: hex(0x458588),
+            accent_dim: hex(0x3a6f72),
+            green: hex(0x79740e),
+            yellow: hex(0xb57614),
+            red: hex(0x9d0009),
+            blue: hex(0x076678),
+            purple: hex(0x8f3f71),
+            cyan: hex(0x427b58),
+            orange: hex(0xaf3a03),
+            pink: hex(0xb16286),
+            border: hex(0xd9c78c),
+            border_hi: hex(0x458588),
+        }
+    }
+
+    /// Liste ordonnée de tous les thèmes (sombre / clair alternés).
+    pub fn all() -> &'static [fn() -> Theme] {
+        &[
+            Theme::catppuccin,
+            Theme::sakura,
+            Theme::nord_light,
+            Theme::solarized_light,
+            Theme::gruvbox_light,
+            Theme::dracula,
+        ]
+    }
+
+    pub fn next(&self) -> Self {
+        let themes = Theme::all();
+        let idx = themes
+            .iter()
+            .position(|ctor| ctor().name == self.name)
+            .map(|i| (i + 1) % themes.len())
+            .unwrap_or(0);
+        themes[idx]()
     }
 
     pub fn status_color(&self, statut: &str) -> Color {

@@ -127,6 +127,26 @@ fn attach_herdr_fullscreen(
     _terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     _agent: &str,
 ) -> io::Result<()> {
+    let kaku_bin = "/Applications/Kaku.app/Contents/MacOS/kaku";
+
+    let herdr_window_exists = Command::new(kaku_bin)
+        .args(["cli", "list"])
+        .output()
+        .map(|o| {
+            o.status.success()
+                && String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .any(|line| line.contains("PKdev-herdr"))
+        })
+        .unwrap_or(false);
+
+    if herdr_window_exists {
+        let _ = Command::new("osascript")
+            .args(["-e", "tell application \"Kaku\" to activate"])
+            .output();
+        return Ok(());
+    }
+
     // Kaku n'expose pas de pane flottant via sa CLI. `cli spawn --new-window`
     // crée une fenêtre, mais elle peut rester en arrière-plan ; `open -na`
     // demande explicitement à macOS d'ouvrir/présenter une fenêtre applicative.

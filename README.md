@@ -159,10 +159,17 @@ PKdev/
 
 ## Thèmes
 
-Deux palettes intégrées, switchables avec `t` :
+Six palettes intégrées, switchables avec `t` :
 
+**Thèmes sombres**
 - **Catppuccin Mocha** (par défaut) — doux, pastel
 - **Dracula** — contrasté, néon
+
+**Thèmes clairs**
+- **Sakura** — blanc rosé doux, fleurs de cerisier
+- **Nord Light** — gris-bleu frais, scandinave
+- **Solarized Light** — crème chaud, contrastes équilibrés
+- **Gruvbox Light** — rétro terreux, ambre/crème
 
 ## Ce qui marche
 
@@ -173,7 +180,7 @@ Deux palettes intégrées, switchables avec `t` :
 - Vue détail, prompts, branches git par ticket
 - Démarrage d'agent opencode (workspace herdr courant)
 - Persistance SQLite
-- Thèmes Dracula + Catppuccin
+- Thèmes Dracula, Catppuccin + 4 thèmes clairs (Sakura, Nord, Solarized, Gruvbox)
 - Support herdr imbriqué (pour voir les agents travailler)
 
 ## Roadmap

@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
@@ -6,6 +8,9 @@ use crate::herdr;
 use crate::theme::Theme;
 
 pub const COLONNES: [&str; 4] = ["backlog", "doing", "review", "done"];
+
+/// Délai max entre deux clics pour qu'ils soient considérés comme un double-clic.
+const DOUBLE_CLICK_MS: u128 = 350;
 
 /// Détecte un Ctrl+<lettre> de façon robuste : crossterm livre parfois
 /// Ctrl+O comme le caractère de contrôle brut '\u{0f}' plutôt que Char('o')
@@ -50,9 +55,17 @@ struct ProjectZone {
     rect: Rect,
 }
 
+#[derive(Clone)]
+struct ColZone {
+    idx: usize,
+    rect: Rect,
+}
+
 struct DragState {
     ticket_id: String,
     col_source: usize,
+    /// Colonne actuellement sous la souris pendant le drag (pour feedback visuel).
+    mouse_col: Option<usize>,
 }
 
 pub fn choisir_dossier() -> Option<String> {
@@ -92,9 +105,14 @@ pub struct App {
     pub show_help: bool,
     pub hit_zones: Vec<HitZone>,
     pub project_zones: Vec<ProjectZone>,
+    pub col_zones: Vec<ColZone>,
     pub drag: Option<DragState>,
     pub show_context_menu: bool,
     pub context_cursor: usize,
+    /// Dernier instant d'un clic gauche sur un ticket (détection double-clic).
+    last_click_at: Option<Instant>,
+    /// (colonne, index ticket) du dernier clic gauche.
+    last_click_target: Option<(usize, usize)>,
     pub cwd: String,
     pub want_file_picker: bool,
     pub browser_cwd: String,
@@ -132,9 +150,12 @@ impl App {
             show_help: false,
             hit_zones: Vec::new(),
             project_zones: Vec::new(),
+            col_zones: Vec::new(),
             drag: None,
             show_context_menu: false,
             context_cursor: 0,
+            last_click_at: None,
+            last_click_target: None,
             cwd: cwd.clone(),
             want_file_picker: false,
             browser_cwd: cwd.clone(),
@@ -463,24 +484,53 @@ impl App {
         }
     }
 
+    /// Applique un changement de statut pour un ticket : met à jour la DB,
+    /// démarre/arrête l'agent Herdr selon la colonne cible, et recharge.
+    /// `id` doit exister dans `self.tickets`.
+    fn appliquer_deplacement(&mut self, id: &str, nv_statut: &str) {
+        let ancien = self
+            .tickets
+            .iter()
+            .find(|t| t.id == id)
+            .map(|t| t.statut.clone())
+            .unwrap_or_default();
+
+        if ancien == nv_statut {
+            return;
+        }
+
+        let _ = self.db.deplacer_ticket(id, nv_statut);
+
+        if nv_statut == "doing" && ancien != "doing" {
+            self.demarrer_agent_pour_ticket(id);
+        } else if nv_statut == "done" && ancien != "done" {
+            let agent_id = self
+                .tickets
+                .iter()
+                .find(|t| t.id == id)
+                .map(|t| t.agent_id.clone())
+                .unwrap_or_default();
+            if !agent_id.is_empty() {
+                let _ = herdr::stop_agent(&agent_id);
+                self.message = format!("{} -> {} (agent arrêté)", id, nv_statut);
+            } else {
+                self.message = format!("{} -> {}", id, nv_statut);
+            }
+        } else {
+            self.message = format!("{} -> {}", id, nv_statut);
+        }
+
+        self.reload();
+    }
+
     pub fn deplacer_gauche(&mut self) {
         if self.col_cursor > 0 {
             if let Some(t) = self.ticket_selectionne() {
                 let id = t.id.clone();
                 let nv = COLONNES[self.col_cursor - 1];
-                let _ = self.db.deplacer_ticket(&id, nv);
-
-                if nv == "doing" && t.statut != "doing" {
-                    self.demarrer_agent_pour_ticket(&id);
-                } else if nv == "done" && t.statut != "done" {
-                    if !t.agent_id.is_empty() {
-                        let _ = herdr::stop_agent(&t.agent_id);
-                        self.message = format!("Agent arrêté pour {}", id);
-                    }
-                }
-
+                self.appliquer_deplacement(&id, nv);
                 self.col_cursor -= 1;
-                self.reload();
+                self.suivre_ticket(&id);
             }
         }
     }
@@ -489,20 +539,26 @@ impl App {
             if let Some(t) = self.ticket_selectionne() {
                 let id = t.id.clone();
                 let nv = COLONNES[self.col_cursor + 1];
-                let _ = self.db.deplacer_ticket(&id, nv);
-
-                if nv == "doing" && t.statut != "doing" {
-                    self.demarrer_agent_pour_ticket(&id);
-                } else if nv == "done" && t.statut != "done" {
-                    if !t.agent_id.is_empty() {
-                        let _ = herdr::stop_agent(&t.agent_id);
-                        self.message = format!("Agent arrêté pour {}", id);
-                    }
-                }
-
+                self.appliquer_deplacement(&id, nv);
                 self.col_cursor += 1;
-                self.reload();
+                self.suivre_ticket(&id);
             }
+        }
+    }
+
+    /// Repositionne le curseur sur un ticket donné après un déplacement.
+    fn suivre_ticket(&mut self, id: &str) {
+        if let Some(col) = COLONNES.iter().position(|s| {
+            self.tickets
+                .iter()
+                .any(|t| t.id == id && t.statut == *s)
+        }) {
+            self.col_cursor = col;
+            self.ticket_cursor = self
+                .colonne(COLONNES[col])
+                .iter()
+                .position(|t| t.id == id)
+                .unwrap_or(0);
         }
     }
     pub fn supprimer(&mut self) {
@@ -869,26 +925,10 @@ impl App {
     }
 
     fn changer_statut_detail(&mut self, id: &str, ancien: &str, nouveau: &str) {
-        let _ = self.db.deplacer_ticket(id, nouveau);
-
-        if nouveau == "doing" && ancien != "doing" {
-            self.demarrer_agent_pour_ticket(id);
-        } else if nouveau == "done" && ancien != "done" {
-            let agent_id = self.tickets.iter()
-                .find(|t| t.id == id)
-                .map(|t| t.agent_id.clone())
-                .unwrap_or_default();
-            if !agent_id.is_empty() {
-                let _ = herdr::stop_agent(&agent_id);
-                self.message = format!("{} → {} (agent arrêté)", id, nouveau);
-            } else {
-                self.message = format!("{} → {}", id, nouveau);
-            }
-        } else {
-            self.message = format!("{} → {}", id, nouveau);
-        }
-
-        self.reload();
+        self.appliquer_deplacement(id, nouveau);
+        // `appliquer_deplacement` gère déjà le message et le reload ;
+        // `ancien` est conservé dans la signature pour la lisibilité des appelants.
+        let _ = ancien;
     }
 
     fn key_herdr_popup(&mut self, _key: KeyEvent) {
@@ -901,6 +941,18 @@ impl App {
                 && my >= z.rect.y && my < z.rect.y + z.rect.height
             {
                 return Some((z.col, z.ticket));
+            }
+        }
+        None
+    }
+
+    /// Index de colonne sous la souris (header + corps, colones vides incluses).
+    fn colonne_sous_souris(&self, mx: u16, my: u16) -> Option<usize> {
+        for z in &self.col_zones {
+            if mx >= z.rect.x && mx < z.rect.x + z.rect.width
+                && my >= z.rect.y && my < z.rect.y + z.rect.height
+            {
+                return Some(z.idx);
             }
         }
         None
@@ -941,36 +993,60 @@ impl App {
             return;
         }
 
+        // --- CONTEXT MENU : tout clic ferme le menu ---
+        if self.mode == Mode::ContextMenu {
+            if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+                || matches!(mouse.kind, MouseEventKind::Down(MouseButton::Right))
+            {
+                self.show_context_menu = false;
+                self.mode = Mode::Normal;
+                // Ne pas traiter ce clic comme une sélection : on laisse
+                // l'utilisateur recliquer pour agir.
+                return;
+            }
+            return;
+        }
+
         match mouse.kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                self.show_context_menu = false;
-
-                // Si on drag déjà, c'est un drop
-                if let Some(drag) = self.drag.take() {
-                    if let Some((col_target, _)) = self.ticket_sous_souris(mx, my) {
-                        if col_target != drag.col_source {
-                            let _ = self.db.deplacer_ticket(&drag.ticket_id, COLONNES[col_target]);
-                            self.reload();
-                            self.message = format!("{} -> {}", drag.ticket_id, COLONNES[col_target]);
-                        }
-                    }
-                    return;
-                }
-
-                // Nouveau clic sur un ticket
+                // Clic gauche sur un ticket : sélection + début de drag potentiel.
                 if let Some((col, ti)) = self.ticket_sous_souris(mx, my) {
+                    // Détection double-clic -> ouvrir le détail.
+                    let maintenant = Instant::now();
+                    let est_double = self.last_click_target == Some((col, ti))
+                        && self
+                            .last_click_at
+                            .map(|t| maintenant.duration_since(t).as_millis() <= DOUBLE_CLICK_MS)
+                            .unwrap_or(false);
+                    self.last_click_at = Some(maintenant);
+                    self.last_click_target = Some((col, ti));
+
                     self.col_cursor = col;
                     self.ticket_cursor = ti;
-                    // Stocker pour drag potentiel
-                    if let Some(t) = self.ticket_selectionne() {
-                        self.drag = Some(DragState {
-                            ticket_id: t.id.clone(),
-                            col_source: col,
-                        });
+
+                    if est_double {
+                        self.drag = None;
+                        self.message.clear();
+                        self.entrer_detail();
+                        return;
                     }
-                    self.entrer_detail();
+
+                    // Clic simple : on sélectionne et on arme un drag.
+                    let ticket_id = self.colonne_courante().get(ti).map(|t| t.id.clone());
+                    if let Some(id) = ticket_id {
+                        self.drag = Some(DragState {
+                            ticket_id: id.clone(),
+                            col_source: col,
+                            mouse_col: Some(col),
+                        });
+                        self.message = format!("{} sélectionné — glisser pour déplacer", id);
+                    }
                     return;
                 }
+
+                // Clic dans le vide : on annule tout drag en cours.
+                self.drag = None;
+                self.message.clear();
             }
 
             MouseEventKind::Down(MouseButton::Right) => {
@@ -984,18 +1060,25 @@ impl App {
             }
 
             MouseEventKind::Drag(MouseButton::Left) => {
-                // Drag actif — visuellement on ne peut pas déplacer le curseur dans ratatui
-                // mais on garde l'état pour le drop
+                // Mise à jour de la colonne survolée pour le feedback visuel.
+                let cible = self.colonne_sous_souris(mx, my);
+                if let Some(d) = self.drag.as_mut() {
+                    d.mouse_col = cible;
+                }
             }
 
             MouseEventKind::Up(MouseButton::Left) => {
-                // Drop
                 if let Some(drag) = self.drag.take() {
-                    if let Some((col_target, _)) = self.ticket_sous_souris(mx, my) {
-                        if col_target != drag.col_source {
-                            let _ = self.db.deplacer_ticket(&drag.ticket_id, COLONNES[col_target]);
-                            self.reload();
-                            self.message = format!("{} -> {} (drag)", drag.ticket_id, COLONNES[col_target]);
+                    let col_target = self.colonne_sous_souris(mx, my);
+                    match col_target {
+                        Some(c) if c != drag.col_source => {
+                            // Drop dans une autre colonne -> déplacement.
+                            self.appliquer_deplacement(&drag.ticket_id, COLONNES[c]);
+                            self.suivre_ticket(&drag.ticket_id);
+                        }
+                        _ => {
+                            // Même colonne ou hors board : simple sélection, pas de move.
+                            self.message.clear();
                         }
                     }
                 }
@@ -1011,8 +1094,21 @@ impl App {
         self.hit_zones.push(HitZone { col, ticket, rect });
     }
     pub fn reset_hitzones(&mut self) { self.hit_zones.clear(); }
+    pub fn enregistrer_colzone(&mut self, idx: usize, rect: Rect) {
+        self.col_zones.push(ColZone { idx, rect });
+    }
+    pub fn reset_colzones(&mut self) { self.col_zones.clear(); }
     pub fn enregistrer_projectzone(&mut self, idx: usize, rect: Rect) {
         self.project_zones.push(ProjectZone { idx, rect });
     }
     pub fn reset_projectzones(&mut self) { self.project_zones.clear(); }
+
+    /// ID du ticket en cours de drag (pour le rendu).
+    pub fn ticket_draggue(&self) -> Option<&str> {
+        self.drag.as_ref().map(|d| d.ticket_id.as_str())
+    }
+    /// Index de colonne survolé pendant le drag (pour le rendu).
+    pub fn colonne_drag_cible(&self) -> Option<usize> {
+        self.drag.as_ref().and_then(|d| d.mouse_col)
+    }
 }

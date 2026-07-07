@@ -21,8 +21,14 @@ fn session_age_label(ticket: &crate::db::Ticket) -> Option<String> {
 pub fn render(frame: &mut Frame, app: &mut App) {
     app.reset_hitzones();
     app.reset_projectzones();
+    app.reset_colzones();
     let area = frame.area();
     let t = app.theme;
+
+    // Pré-remplir tout l'écran avec le fond du thème : évite que le fond du
+    // terminal (souvent sombre) ne transparaissent dans les interstices entre
+    // les briques — crucial pour les thèmes clairs.
+    frame.render_widget(Block::default().style(Style::default().bg(t.bg)), area);
 
     match app.mode {
         Mode::Projects | Mode::ProjectNew => render_projects(frame, app, area, t),
@@ -452,6 +458,10 @@ fn render_colonnes(frame: &mut Frame, app: &mut App, area: Rect, t: Theme) {
     let col_cursor = app.col_cursor;
     let ticket_cursor = app.ticket_cursor;
 
+    // État de drag pour le feedback visuel.
+    let drag_id = app.ticket_draggue().map(|s| s.to_string());
+    let drag_cible = app.colonne_drag_cible();
+
     let donnees: Vec<(&'static str, Vec<crate::db::Ticket>)> = COLONNES
         .iter()
         .map(|&s| {
@@ -476,8 +486,18 @@ fn render_colonnes(frame: &mut Frame, app: &mut App, area: Rect, t: Theme) {
         let courant = idx == col_cursor;
         let couleur = t.status_color(statut);
 
-        // En-tête
-        let header_bg = if courant { t.surface } else { t.bg_alt };
+        // Zone de drop = toute la colonne (header + corps).
+        app.enregistrer_colzone(idx, r);
+
+        // En-tête — surligné si c'est la cible du drag.
+        let est_cible = drag_cible == Some(idx);
+        let header_bg = if est_cible {
+            t.surface_hi
+        } else if courant {
+            t.surface
+        } else {
+            t.bg_alt
+        };
         let header = Line::from(vec![
             Span::styled(
                 format!(" {} ", t.status_icon(statut)),
@@ -503,18 +523,33 @@ fn render_colonnes(frame: &mut Frame, app: &mut App, area: Rect, t: Theme) {
                 break;
             }
             let sel = courant && ti == ticket_cursor;
-            let bg = if sel { t.surface_hi } else { t.bg };
+            let est_draggue = drag_id.as_deref() == Some(ticket.id.as_str());
+
+            // Un ticket en cours de drag est affiché estompé (il "flotte").
+            let bg = if est_draggue {
+                t.bg_alt
+            } else if sel {
+                t.surface_hi
+            } else {
+                t.bg
+            };
 
             let mut spans = vec![
                 Span::styled(
                     format!(" {}", ticket.id),
                     Style::default()
-                        .fg(if sel { couleur } else { t.fg_dim })
+                        .fg(if est_draggue {
+                            t.fg_dim
+                        } else if sel {
+                            couleur
+                        } else {
+                            t.fg_dim
+                        })
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!(" {}", truncate(&ticket.titre, r.width.saturating_sub(12) as usize)),
-                    Style::default().fg(if sel { t.fg } else { t.fg_dim }),
+                    Style::default().fg(if est_draggue { t.fg_dim } else if sel { t.fg } else { t.fg_dim }),
                 ),
             ];
 
@@ -565,9 +600,11 @@ fn render_sidebar(frame: &mut Frame, app: &App, area: Rect, t: Theme) {
     lignes.push(Line::raw(" "));
     for (k, l) in [
         ("Entrée", "rentrer"),
+        ("2x clic", "rentrer"),
         ("a", "ajouter"),
         ("⌥←/→", "déplacer"),
         ("H/L", "déplacer"),
+        ("glisser", "drag & drop"),
         ("d", "supprimer"),
         ("t", "thème"),
         ("?", "aide"),
@@ -733,7 +770,9 @@ fn render_aide(frame: &mut Frame, _app: &App, area: Rect, t: Theme) {
         Line::from(vec![Span::styled("  a         ", Style::default().fg(t.cyan)), Span::styled("Ajouter", Style::default().fg(t.fg))]),
         Line::from(vec![Span::styled("  d         ", Style::default().fg(t.red)), Span::styled("Supprimer", Style::default().fg(t.fg))]),
         Line::from(vec![Span::styled("  t         ", Style::default().fg(t.purple)), Span::styled("Thème", Style::default().fg(t.fg))]),
-        Line::from(vec![Span::styled("  clic G    ", Style::default().fg(t.orange)), Span::styled("Sélectionner / drag & drop", Style::default().fg(t.fg))]),
+        Line::from(vec![Span::styled("  clic G    ", Style::default().fg(t.orange)), Span::styled("Sélectionner un ticket", Style::default().fg(t.fg))]),
+        Line::from(vec![Span::styled("  2x clic G ", Style::default().fg(t.orange)), Span::styled("Ouvrir le détail", Style::default().fg(t.fg))]),
+        Line::from(vec![Span::styled("  glisser   ", Style::default().fg(t.orange)), Span::styled("Drag & drop entre colonnes", Style::default().fg(t.fg))]),
         Line::from(vec![Span::styled("  clic D    ", Style::default().fg(t.orange)), Span::styled("Menu contextuel", Style::default().fg(t.fg))]),
         Line::raw(" "),
         Line::from(Span::styled("  ? / Échap pour fermer", Style::default().fg(t.fg_dim))),
