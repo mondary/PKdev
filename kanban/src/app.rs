@@ -596,8 +596,6 @@ impl App {
         if let Some(id) = self.ticket_detail_id() {
             let ticket = self.tickets.iter().find(|t| t.id == id).cloned();
             if let Some(t) = ticket {
-                let should_send_initial_prompt = t.agent_id.is_empty();
-
                 // Auto-passer en doing sans démarrer deux fois l'agent.
                 if t.statut != "doing" {
                     let _ = self.db.deplacer_ticket(&id, "doing");
@@ -613,14 +611,21 @@ impl App {
                         let _ = self.db.update_agent_id(&id, &agent.name);
                         self.reload();
 
-                        if agent.created && should_send_initial_prompt {
+                        if self.db.mark_initial_prompt_sent_once(&id).unwrap_or(false) {
                             // Prompt initial uniquement pour une nouvelle session.
                             let prompt = format!(
-                                "Travaille sur {}: {} — {}",
-                                t.id, t.titre,
-                                if t.description.is_empty() { "implémente cette US" } else { &t.description }
+                                "{} — {}{}",
+                                t.id,
+                                t.titre,
+                                if t.description.is_empty() {
+                                    "".to_string()
+                                } else {
+                                    format!("\n\n{}", t.description)
+                                }
                             );
-                            let _ = herdr::send_prompt(&agent.name, &prompt);
+                            if !herdr::send_prompt(&agent.name, &prompt) {
+                                let _ = self.db.clear_initial_prompt_sent(&id);
+                            }
                         }
 
                         // Focus sur le workspace + onglet

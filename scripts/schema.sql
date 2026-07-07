@@ -36,6 +36,7 @@ CREATE TABLE tickets (
   branche     TEXT DEFAULT '',
   agent_id    TEXT DEFAULT '',
   session_started_le TEXT DEFAULT NULL,
+  initial_prompt_sent_le TEXT DEFAULT NULL,
   cree_le     TEXT DEFAULT (datetime('now')),
   termine_le  TEXT,
   FOREIGN KEY (projet_id) REFERENCES projects(id)

@@ -198,6 +198,24 @@ impl Database {
         Ok(())
     }
 
+    pub fn mark_initial_prompt_sent_once(&self, ticket_id: &str) -> rusqlite::Result<bool> {
+        let changed = self.conn.execute(
+            "UPDATE tickets
+             SET initial_prompt_sent_le = datetime('now')
+             WHERE id = ?1 AND initial_prompt_sent_le IS NULL",
+            params![ticket_id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn clear_initial_prompt_sent(&self, ticket_id: &str) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE tickets SET initial_prompt_sent_le = NULL WHERE id = ?1",
+            params![ticket_id],
+        )?;
+        Ok(())
+    }
+
     pub fn supprimer_ticket(&self, id: &str) -> rusqlite::Result<()> {
         self.conn.execute("DELETE FROM tickets WHERE id = ?1", params![id])?;
         self.log_history("ticket_deleted", Some(id), "Ticket supprimé")

@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
@@ -13,6 +13,27 @@ pub fn herdr_dispo() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+fn ensure_server() {
+    let running = Command::new(bin())
+        .args(["status", "server"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("status: running"))
+        .unwrap_or(false);
+
+    if running {
+        return;
+    }
+
+    let _ = Command::new(bin())
+        .arg("server")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+
+    thread::sleep(Duration::from_millis(250));
 }
 
 // =====================================================
@@ -37,6 +58,8 @@ pub struct HerdrWorkspace {
 
 /// Trouve ou crée un workspace herdr pour le projet.
 pub fn trouver_ou_creer_workspace(label: &str, cwd: &str) -> Option<String> {
+    ensure_server();
+
     if let Ok(o) = Command::new(bin()).args(["workspace", "list"]).output() {
         if o.status.success() {
             let text = String::from_utf8_lossy(&o.stdout);
@@ -68,6 +91,8 @@ pub fn trouver_ou_creer_workspace(label: &str, cwd: &str) -> Option<String> {
 }
 
 pub fn focus_workspace(workspace_id: &str) -> bool {
+    ensure_server();
+
     Command::new(bin())
         .args(["workspace", "focus", workspace_id])
         .output()
@@ -92,6 +117,7 @@ struct AgentListResult {
 #[derive(Deserialize, Clone)]
 pub struct HerdrAgent {
     pub name: Option<String>,
+    pub agent: Option<String>,
     pub agent_status: String,
     pub cwd: String,
     pub pane_id: String,
@@ -129,6 +155,8 @@ pub struct StartedAgent {
 }
 
 pub fn list_agents() -> HerdrAgentsResult {
+    ensure_server();
+
     let out = Command::new(bin()).args(["agent", "list"]).output();
 
     match out {
@@ -144,6 +172,8 @@ pub fn list_agents() -> HerdrAgentsResult {
 }
 
 fn list_panes(workspace_id: &str) -> Vec<HerdrPane> {
+    ensure_server();
+
     let out = Command::new(bin())
         .args(["pane", "list", "--workspace", workspace_id])
         .output();
@@ -177,13 +207,81 @@ fn find_agent(name: &str, workspace_id: &str) -> Option<HerdrAgent> {
     list_agents()
         .agents
         .into_iter()
-        .find(|a| a.name.as_deref() == Some(name) && a.workspace_id == workspace_id)
+        .find(|a| {
+            a.name.as_deref() == Some(name)
+                && a.workspace_id == workspace_id
+                && a.agent.as_deref() == Some("opencode")
+        })
+}
+
+fn wait_agent_ready(name: &str, workspace_id: Option<&str>) -> Option<HerdrAgent> {
+    for _ in 0..40 {
+        let agents = list_agents();
+        for agent in agents.agents {
+            if agent.name.as_deref() == Some(name)
+                && agent.agent.as_deref() == Some("opencode")
+                && workspace_id.map(|id| agent.workspace_id == id).unwrap_or(true)
+            {
+                return Some(agent);
+            }
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+    None
+}
+
+fn pane_text(pane_id: &str) -> String {
+    let out = Command::new(bin())
+        .args([
+            "pane",
+            "read",
+            pane_id,
+            "--source",
+            "recent-unwrapped",
+            "--lines",
+            "30",
+            "--format",
+            "text",
+        ])
+        .output();
+
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+        _ => String::new(),
+    }
+}
+
+fn wait_opencode_ui_ready(pane_id: &str) -> bool {
+    for _ in 0..40 {
+        let text = pane_text(pane_id);
+        if text.contains("/status") || text.contains("OpenCode") || text.contains("opencode") {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+    false
 }
 
 pub fn start_agent(name: &str, cwd: &str, workspace_id: &str) -> Option<StartedAgent> {
     let agents = list_agents();
     for a in &agents.agents {
         if a.name.as_deref() == Some(name) && a.workspace_id == workspace_id {
+            if a.agent.as_deref() != Some("opencode") {
+                let _ = Command::new(bin())
+                    .args(["tab", "focus", &a.tab_id])
+                    .output();
+                let _ = Command::new(bin())
+                    .args(["pane", "run", &a.pane_id, "opencode"])
+                    .output();
+
+                if let Some(agent) = wait_agent_ready(name, Some(workspace_id)) {
+                    close_empty_siblings(&agent);
+                    return Some(StartedAgent { name: name.to_string(), created: true });
+                }
+
+                return None;
+            }
+
             let _ = Command::new(bin())
                 .args(["tab", "focus", &a.tab_id])
                 .output();
@@ -237,14 +335,39 @@ pub fn focus_agent(name: &str) -> bool {
 }
 
 pub fn send_prompt(name: &str, text: &str) -> bool {
-    Command::new(bin())
+    ensure_server();
+
+    let Some(agent) = wait_agent_ready(name, None) else {
+        return false;
+    };
+
+    if !wait_opencode_ui_ready(&agent.pane_id) {
+        return false;
+    }
+
+    let sent = Command::new(bin())
         .args(["agent", "send", name, text])
         .output()
         .map(|o| o.status.success())
-        .unwrap_or(false)
+        .unwrap_or(false);
+
+    if !sent {
+        return false;
+    }
+
+    for _ in 0..10 {
+        if pane_text(&agent.pane_id).contains(text) {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(200));
+    }
+
+    false
 }
 
 pub fn stop_agent(name: &str) -> bool {
+    ensure_server();
+
     let agents = list_agents();
     for a in &agents.agents {
         if a.name.as_deref() == Some(name) {

@@ -39,6 +39,9 @@ fn init_db() -> Database {
     let _ = db.execute_batch(
         "ALTER TABLE tickets ADD COLUMN session_started_le TEXT DEFAULT NULL;",
     );
+    let _ = db.execute_batch(
+        "ALTER TABLE tickets ADD COLUMN initial_prompt_sent_le TEXT DEFAULT NULL;",
+    );
 
     if !existe {
         if let Err(e) = db.execute_batch(SCHEMA_SQL) {
